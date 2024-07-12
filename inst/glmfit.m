@@ -1,5 +1,6 @@
 ## Copyright (C) 2024 Ruchika Sonagote <ruchikasonagote2003@gmail.com>
 ## Copyright (C) 2024 Andreas Bertsatos <abertsatos@biol.uoa.gr>
+## Copyright (C) 2024 Yassin Achengli <0619883460@uma.es>
 ##
 ## This file is part of the statistics package for GNU Octave.
 ##
@@ -70,7 +71,7 @@ function [b,varargout] = glmfit (X, y, distribution, varargin)
   ## Check input
   if (nargin < 3)
     error ("glmfit: too few input arguments.");
-  elseif (mod (nargin - 3, 2) != 0)
+  elseif (mod(nargin - 3, 2) != 0)
     error ("glmfit: Name-Value arguments must be in pairs.");
   elseif (! isnumeric (X))
     error ("glmfit: X must be a numeric.");
@@ -82,123 +83,69 @@ function [b,varargout] = glmfit (X, y, distribution, varargin)
     error ("glmfit: DISTRIBUTION must be a character vector.");
   endif
 
-  ## Remove missing values
-  xymissing = isnan (y) | any (isnan (X), 2);
-  y(xymissing) = [];
-  X(xymissing,:) = [];
+  ## Missing values set to 0
+  X(isnan(X)) = 0;
+  y(isnan(y)) = 0;
+
   [my, ny] = size (y);
   [mx, nx] = size (X);
 
   ## Check dimensions based on distribution
   if (strcmpi (distribution, 'binomial'))
-    if (size (y, 2) > 2)
+    if (ny > 2)
       error (["glmfit: for a binomial distribution,", ...
               " Y must be an n-by-1 or n-by-2 matrix."]);
     endif
   else
-    if (size (y, 2) != 1)
+    if (ny != 1)
       error (["glmfit: for distributions other than the binomial,", ...
               " Y must be an n-by-1 column vector."]);
     endif
   endif
 
-  ## Add default link functions
-  switch (tolower (distribution))
-    case "poisson"
-      link = "log";
-    case "binomial"
-      link = "logit";
-    case "normal"
-      link = "identity";
-    case "gamma"
-      error ("glmfit: 'gamma' distribution is not supported yet.");
-    case "inverse gaussian"
-      error ("glmfit: 'inverse gaussian' distribution is not supported yet.");
-    otherwise
-      error ("glmfit: unknown distribution.");
-  endswitch
+  __link_verf = @(__link) (iscell(__link) && numel(__link) == 3 &&...
+  !(any(cellfun(@is_function_handle, __link) == 0))) || ischar(__link);
 
-  ## Set default for constant
-  constant = "on";
+  __default_dispest = ['on', 'off'](strcmpi(distribution, 'binomial') || ...
+  strcmpi(distribution, 'poisson') + 1);
 
-  ## Parse extra parameters
-  while (numel (varargin) > 0)
-    switch (tolower (varargin {1}))
-      case "link"
-        linkInput = varargin {2};
-        ## Check custom link
-        if (iscell (linkInput))
-          if (numel (linkInput) != 3)
-            error (["glmfit: custom link functions must be", ...
-                    " in a three-element cell array."])
-          endif
-          linkFunc = linkInput{1};
-          derLinkFunc = linkInput{2};
-          invLinkFunc = linkInput{3};
-          ## Check for function_handle
-          if (! all (cellfun (@(f) isa (f, 'function_handle'), linkInput)))
-            error ("glmfit: custom link functions must be function handles.");
-          endif
-          ## Test the custom function with a small vector
-          try
-            testInput = [1; 2; 3; 4; 5];
-            testOutput = invLinkFunc (testInput);
-            if (! isequal (size (testInput), size (testOutput)))
-              error (["glmfit: custom inverse link function must", ...
-                      " return output of the same size as input."]);
-            endif
-          catch
-            error (["glmfit: custom inverse link function must", ...
-                      " return output of the same size as input."]);
-          end_try_catch
-          link = "custom";
-        ## Check link
-        elseif ischar (linkInput) || isstring (linkInput)
-          link = tolower (linkInput);
-          if (! any (strcmpi (link, {"identity", "log", "logit", "probit", ...
-                                     "loglog", "comploglog", "reciprocal"})))
-            error ("glmfit: unsupported link function.");
-          endif
-        else
-          error ("glmfit: invalid value for link function.");
-        endif
-      case "constant"
-        constant = tolower (varargin {2});
-        if (! any (strcmpi (constant, {"on", "off"})))
-          error ("glmfit: constant should be either 'on' or 'off'.");
-        endif
-      otherwise
-        error ("glmfit: unknown parameter name.");
-    endswitch
-    varargin (1:2) = [];
-  endwhile
+  ## parsing named arguments
+  parser = inputParser();
+  parser.addParameter('link', {@(x) x, @(x) 1, @(x) 1/x}, @__link_verf);
+  parser.addParameter('constant', 'on', @(x) ischar(x) && (x == 'on' || x == 'off'));
+  parser.addParameter('dispest', __default_dispest, @ischar);
+  parser.addParameter('likelihoodpenalty', 'none', @ischar);
+  parser.addParameter('offset', 0, @(x) (isnumeric(x) && isvector(x)));
+  parser.parse(varargin{:});
+  results = parser.Results;
 
   ## Adjust X based on constant
-  if (strcmpi (constant, 'on'))
+  if (strcmpi (results.constant, 'on'))
     X = [ones(mx, 1), X];
   endif
 
-  ## Initialize b
-  b = zeros (size (X, 2), 1);
+  ## b initialization
+  b = zeros (nx, 1);
 
-  ## Select functions
-  switch (link)
+  ## Assign named link functions
+  if (ischar(__link))
+  switch (__link)
     case "identity"
-      ilink = @(x) x;
+      __link = {@(x) x, @(x) 1, @(x) 1/x};
     case "log"
-      ilink = @(x) exp (x);
+      __link = {@(x) exp(x), @(x) exp(x), @(x) exp(-x)}
     case "logit"
-      ilink = @(x) exp (x) ./ (1 + exp (x));
+      __link = {@(x) exp(x) ./ (1 + exp(x)), @(x) 1 ./ (4*cosh(x/2)^2), @(x) (1 + exp(x)) ./ exp(x)};
     case "probit"
-      ilink = @(x) normcdf (x);
+      __link = {@(x) {normcdf(x), normpdf(x), 1./normcdf(x)};
     case "loglog"
-      ilink = @(x) exp (-exp (x));
+      __link = {@(x) exp(-exp(x)), @(x) -exp(x - exp(x)), @(x) exp(exp(x))};
     case "comploglog"
-      ilink = @(x) 1 - exp (-exp (x));
+      __link = {@(x) 1 - exp (-exp (x)), @(x) exp(x - exp(x)), @(x) 1./(1 - exp(-exp(x)))};
     case "reciprocal"
-      ilink = @(x) 1 ./ x;
-    case "custom"
-      ilink = invLinkFunc;
+      __link = {@(x) 1./x, @(x) log(abs(x)), @(x) x};
+    otherwise
+      error('glmfit: unknown link function')
   endswitch
 
   ## Select negative loglikelihood according to distribution
