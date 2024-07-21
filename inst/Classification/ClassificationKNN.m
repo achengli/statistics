@@ -1,5 +1,6 @@
 ## Copyright (C) 2023 Mohammed Azmat Khan <azmat.dev0@gmail.com>
 ## Copyright (C) 2023-2024 Andreas Bertsatos <abertsatos@biol.uoa.gr>
+## Copyright (C) 2024 Ruchika Sonagote <ruchikasonagote2003@gmail.com>
 ##
 ## This file is part of the statistics package for GNU Octave.
 ##
@@ -37,7 +38,6 @@ classdef ClassificationKNN
 ## @code{Y} is @math{Nx1} matrix or cell matrix containing the class labels of
 ## corresponding predictor data in @var{X}. @var{Y} can contain any type of
 ## categorical data. @var{Y} must have same numbers of Rows as @var{X}.
-## @item
 ## @end itemize
 ##
 ## @code{@var{obj} = ClassificationKNN (@dots{}, @var{name}, @var{value})}
@@ -120,6 +120,11 @@ classdef ClassificationKNN
 ## @qcode{i = j}.  In other words, the cost is 0 for correct classification and
 ## 1 for incorrect classification.
 ##
+## @item @qcode{obj.ScoreTransform} @tab @tab A function_handle which is used
+## for transforming the kNN prediction score into a posterior probability.  By
+## default, it is @qcode{'none'}, in which case the @code{predict} and
+## @code{resubPredict} methods return the prediction scores.
+##
 ## @item @qcode{obj.NumNeighbors} @tab @tab Number of nearest neighbors in
 ## @var{X} used to classify each point during prediction, specified as a
 ## positive integer value.
@@ -178,10 +183,12 @@ classdef ClassificationKNN
     PredictorNames  = [];     # Predictor variables names
     ResponseName    = [];     # Response variable name
     ClassNames      = [];     # Names of classes in Y
-    BreakTies       = [];     # Tie-breaking algorithm
     Prior           = [];     # Prior probability for each class
     Cost            = [];     # Cost of misclassification
 
+    ScoreTransform  = [];     # Transformation for classification scores
+
+    BreakTies       = [];     # Tie-breaking algorithm
     NumNeighbors    = [];     # Number of nearest neighbors
     Distance        = [];     # Distance metric
     DistanceWeight  = [];     # Distance weighting function
@@ -214,23 +221,24 @@ classdef ClassificationKNN
       [gY, gnY, glY] = grp2idx (Y);
 
       ## Set default values before parsing optional parameters
-      Standardize     = false;  # Flag to standardize predictors
-      PredictorNames  = [];     # Predictor variables names
-      ResponseName    = [];     # Response variable name
-      ClassNames      = [];     # Names of classes in Y
-      BreakTies       = [];     # Tie-breaking algorithm
-      Prior           = [];     # Prior probability for each class
-      Cost            = [];     # Cost of misclassification
+      Standardize     = false;
+      PredictorNames  = [];
+      ResponseName    = [];
+      ClassNames      = [];
+      Prior           = [];
+      Cost            = [];
       Scale           = [];     # Distance scale for 'seuclidean'
       Cov             = [];     # Covariance matrix for 'mahalanobis'
       Exponent        = [];     # Exponent for 'minkowski'
-      NumNeighbors    = [];     # Number of nearest neighbors
-      Distance        = [];     # Distance metric
-      DistanceWeight  = [];     # Distance weighting function
-      DistParameter   = [];     # Parameter for distance metric
-      NSMethod        = [];     # Nearest neighbor search method
-      IncludeTies     = false;  # Flag for handling ties
-      BucketSize      = 50;     # Maximum data points in each node
+      BreakTies       = [];
+      NumNeighbors    = [];
+      Distance        = [];
+      DistanceWeight  = [];
+      DistParameter   = [];
+      NSMethod        = [];
+      IncludeTies     = false;
+      BucketSize      = 50;
+      this.ScoreTransform  = 'none';
 
       ## Number of parameters for Standardize, Scale, Cov (maximum 1 allowed)
       SSC = 0;
@@ -243,12 +251,12 @@ classdef ClassificationKNN
             if (SSC < 1)
               Standardize = varargin{2};
               if (! (Standardize == true || Standardize == false))
-                error (strcat (["ClassificationKNN: Standardize must"], ...
+                error (strcat (["ClassificationKNN: 'Standardize' must"], ...
                                [" be either true or false."]));
               endif
               SSC += 1;
             else
-              error (strcat (["ClassificationKNN: Standardize cannot"], ...
+              error (strcat (["ClassificationKNN: 'Standardize' cannot"], ...
                              [" simultaneously be specified with either"], ...
                              [" Scale or Cov."]));
             endif
@@ -256,62 +264,120 @@ classdef ClassificationKNN
           case "predictornames"
             PredictorNames = varargin{2};
             if (! iscellstr (PredictorNames))
-              error (strcat (["ClassificationKNN: PredictorNames must"], ...
+              error (strcat (["ClassificationKNN: 'PredictorNames' must"], ...
                              [" be supplied as a cellstring array."]));
             elseif (columns (PredictorNames) != columns (X))
-              error (strcat (["ClassificationKNN: PredictorNames must"], ...
+              error (strcat (["ClassificationKNN: 'PredictorNames' must"], ...
                              [" have the same number of columns as X."]));
             endif
 
           case "responsename"
             ResponseName = varargin{2};
             if (! ischar (ResponseName))
-              error ("ClassificationKNN: ResponseName must be a character array.");
+              error (strcat (["ClassificationKNN: 'ResponseName'"], ...
+                             [" must be a character vector."]));
             endif
 
           case "classnames"
             ClassNames = varargin{2};
-            if (! iscellstr (ClassNames))
-              error (strcat (["ClassificationKNN: ClassNames must"], ...
-                               [" be a cellstring array."]));
+            if (! (iscellstr (ClassNames) || isnumeric (ClassNames)
+                                          || islogical (ClassNames)))
+              error (strcat (["ClassificationKNN: 'ClassNames' must be a"], ...
+                             [" cellstring, logical or numeric vector."]));
             endif
             ## Check that all class names are available in gnY
-            if (! all (cell2mat (cellfun (@(x) any (strcmp (x, gnY)),
-                                 ClassNames, "UniformOutput", false))))
-              error ("ClassificationKNN: not all ClassNames are present in Y.");
-            endif
-
-          case "breakties"
-            BreakTies = varargin{2};
-            if (! ischar (BreakTies))
-              error ("ClassificationKNN: BreakTies must be a character array.");
-            endif
-            ## Check that all class names are available in gnY
-            BTs = {"smallest", "nearest", "random"};
-            if (! any (strcmpi (BTs, BreakTies)))
-              error ("ClassificationKNN: invalid value for BreakTies.");
+            if (iscellstr (ClassNames))
+              if (! all (cell2mat (cellfun (@(x) any (strcmp (x, gnY)),
+                                   ClassNames, "UniformOutput", false))))
+                error (strcat (["ClassificationKNN: not all 'ClassNames'"], ...
+                               [" are present in Y."]));
+              endif
+            else
+              if (! all (cell2mat (arrayfun (@(x) any (x == glY),
+                                   ClassNames, "UniformOutput", false))))
+                error (strcat (["ClassificationKNN: not all 'ClassNames'"], ...
+                               [" are present in Y."]));
+              endif
             endif
 
           case "prior"
             Prior = varargin{2};
             if (! ((isnumeric (Prior) && isvector (Prior)) ||
                   (strcmpi (Prior, "empirical") || strcmpi (Prior, "uniform"))))
-              error (strcat (["ClassificationKNN: Prior must be either a"], ...
-                             [" numeric vector or a string."]));
+              error (strcat (["ClassificationKNN: 'Prior' must be either"], ...
+                             [" a numeric vector or a character vector."]));
             endif
 
           case "cost"
             Cost = varargin{2};
             if (! (isnumeric (Cost) && issquare (Cost)))
-              error ("ClassificationKNN: Cost must be a numeric square matrix.");
+              error (strcat (["ClassificationKNN: 'Cost' must be"], ...
+                             [" a numeric square matrix."]));
+            endif
+
+          case "scoretransform"
+            ScoreTransform = varargin{2};
+            stList = {"doublelogit", "invlogit", "ismax", "logit", "none", ...
+                      "identity", "sign", "symmetric", "symmetricismax", ...
+                      "symmetriclogit"};
+            if (! (ischar (ScoreTransform) ||
+                   strcmp (class (ScoreTransform), "function_handle")))
+              error (strcat (["ClassificationKNN: 'ScoreTransform' must"], ...
+                             [" be a character vector or a function handle."]));
+            endif
+            if (! ismember (ScoreTransform, stList))
+              error (strcat (["ClassificationKNN: unrecognized"], ...
+                             [" 'ScoreTransform' function."]));
+            endif
+            ## Handle ScoreTransform here
+            if (is_function_handle (ScoreTransform))
+              m = eye (5);
+              if (! isequal (size (m), size (ScoreTransform (m))))
+                error (strcat (["ClassificationKNN: function handle for"], ...
+                               [" 'ScoreTransform' must return the same"], ...
+                               [" size as its input."]));
+              endif
+              this.ScoreTransform = ScoreTransform;
+            else
+              if (strcmpi ("doublelogit", ScoreTransform))
+                this.ScoreTransform = @(x) 1 ./ (1 + exp .^ (-2 * x));
+              elseif (strcmpi ("invlogit", ScoreTransform))
+                this.ScoreTransform = @(x) log (x ./ (1 - x));
+              elseif (strcmpi ("ismax", ScoreTransform))
+                this.ScoreTransform = eval (sprintf ("@(x) ismax (x)"));
+              elseif (strcmpi ("logit", ScoreTransform))
+                this.ScoreTransform = @(x) 1 ./ (1 + exp .^ (-x));
+              elseif (strcmpi ("identity", ScoreTransform))
+                this.ScoreTransform = 'none';
+              elseif (strcmpi ("sign", ScoreTransform))
+                this.ScoreTransform = @(x) sign (x);
+              elseif (strcmpi ("symmetric", ScoreTransform))
+                this.ScoreTransform = @(x) 2 * x - 1;
+              elseif (strcmpi ("symmetricismax", ScoreTransform))
+                this.ScoreTransform = eval (sprintf ("@(x) symmetricismax (x)"));
+              elseif (strcmpi ("symmetriclogit", ScoreTransform))
+                this.ScoreTransform = @(x) 2 ./ (1 + exp .^ (-x)) - 1;
+              endif
+            endif
+
+          case "breakties"
+            BreakTies = varargin{2};
+            if (! ischar (BreakTies))
+              error (strcat (["ClassificationKNN: 'BreakTies'"], ...
+                             [" must be a character vector."]));
+            endif
+            ## Check that all class names are available in gnY
+            BTs = {"smallest", "nearest", "random"};
+            if (! any (strcmpi (BTs, BreakTies)))
+              error ("ClassificationKNN: invalid value for 'BreakTies'.");
             endif
 
           case "numneighbors"
             NumNeighbors = varargin{2};
             if (! (isnumeric (NumNeighbors) && isscalar (NumNeighbors) &&
                    NumNeighbors > 0 && fix (NumNeighbors) == NumNeighbors))
-              error (strcat (["ClassificationKNN: NumNeighbors must be a"], ...
-                             [" positive integer."]));
+              error (strcat (["ClassificationKNN: 'NumNeighbors'"], ...
+                             [" must be a positive integer."]));
             endif
 
           case "distance"
@@ -346,7 +412,7 @@ classdef ClassificationKNN
             DMs = {"equal", "inverse", "squareinverse"};
             if (is_function_handle (DistanceWeight))
               m = eye (5);
-              if (! isequal (size (m), size (DistanceWeight(m))))
+              if (! isequal (size (m), size (DistanceWeight (m))))
                 error (strcat (["ClassificationKNN: function handle for"], ...
                                [" distance weight must return the same"], ...
                                [" size as its input."]));
@@ -371,13 +437,13 @@ classdef ClassificationKNN
             if (SSC < 1)
               Scale = varargin{2};
               if (! (isnumeric (Scale) && isvector (Scale)))
-                error ("ClassificationKNN: Scale must be a numeric vector.");
+                error ("ClassificationKNN: 'Scale' must be a numeric vector.");
               endif
               SSC += 1;
             else
-              error (strcat (["ClassificationKNN: Scale cannot"], ...
+              error (strcat (["ClassificationKNN: 'Scale' cannot"], ...
                              [" simultaneously be specified with either"], ...
-                             [" Standardize or Cov."]));
+                             [" 'Standardize' or 'Cov'."]));
             endif
 
           case "cov"
@@ -385,52 +451,54 @@ classdef ClassificationKNN
               Cov = varargin{2};
               [~, p] = chol (Cov);
               if (p != 0)
-                error (strcat (["ClassificationKNN: Cov must be a"], ...
+                error (strcat (["ClassificationKNN: 'Cov' must be a"], ...
                                [" symmetric positive definite matrix."]));
               endif
               SSC += 1;
             else
-              error (strcat (["ClassificationKNN: Cov cannot"], ...
+              error (strcat (["ClassificationKNN: 'Cov' cannot"], ...
                              [" simultaneously be specified with either"], ...
-                             [" Standardize or Scale."]));
+                             [" 'Standardize' or 'Scale'."]));
             endif
 
           case "exponent"
             Exponent = varargin{2};
             if (! (isnumeric (Exponent) && isscalar (Exponent) &&
                            Exponent > 0 && fix (Exponent) == Exponent))
-              error ("ClassificationKNN: Exponent must be a positive integer.");
+              error (strcat (["ClassificationKNN: 'Exponent'"], ...
+                             [" must be a positive integer."]));
             endif
 
           case "nsmethod"
             NSMethod = varargin{2};
             NSM = {"kdtree", "exhaustive"};
             if (! ischar (NSMethod))
-              error ("ClassificationKNN: NSMethod must be a character array.");
+              error (strcat (["ClassificationKNN: 'NSMethod' must"], ...
+                             [" be a character vector."]));
             endif
             if (! any (strcmpi (NSM, NSMethod)))
-              error (strcat (["ClassificationKNN: NSMethod must"], ...
-                             [" be either kdtree or exhaustive."]));
+              error (strcat (["ClassificationKNN: 'NSMethod' must"], ...
+                             [" be either 'kdtree' or 'exhaustive'."]));
             endif
 
           case "includeties"
             IncludeTies = varargin{2};
             if (! (IncludeTies == true || IncludeTies == false))
-              error (strcat (["ClassificationKNN: IncludeTies must"], ...
-                             [" be either true or false."]));
+              error (strcat (["ClassificationKNN: 'IncludeTies'"], ...
+                             [" must be either true or false."]));
             endif
 
           case "bucketsize"
             BucketSize = varargin{2};
             if (! (isnumeric (BucketSize) && isscalar (BucketSize) &&
                            BucketSize > 0 && fix (BucketSize) == BucketSize))
-              error (strcat (["ClassificationKNN: BucketSize must be a"], ...
-                             [" positive integer."]));
+              error (strcat (["ClassificationKNN: 'BucketSize'"], ...
+                             [" must be a positive integer."]));
             endif
 
           otherwise
-            error (strcat (["ClassificationKNN: invalid parameter name"],...
-                           [" in optional pair arguments."]));
+            error (strcat (["ClassificationKNN: invalid parameter"],...
+                           [" name in optional pair arguments."]));
 
         endswitch
         varargin (1:2) = [];
@@ -457,17 +525,15 @@ classdef ClassificationKNN
       this.ResponseName   = ResponseName;
 
       ## Handle class names
-      if (isempty (ClassNames))
-        ClassNames = gnY;
-      else
-        ru = logical (zeros (size (Y)));
-        for i = 1:numel (ClassNames)
-          ac = find (strcmp (gnY, ClassNames{i}));
-          ru = ru | ac;
+      if (! isempty (ClassNames))
+        if (iscellstr (ClassNames))
+          ru = find (! ismember (gnY, ClassNames));
+        else
+          ru = find (! ismember (glY, ClassNames));
+        endif
+        for i = 1:numel (ru)
+          gY(gY == ru(i)) = NaN;
         endfor
-        X = X(ru);
-        Y = Y(ru);
-        gY = gY(ru);
       endif
 
       ## Remove missing values from X and Y
@@ -520,8 +586,8 @@ classdef ClassificationKNN
         this.Prior = pr ./ sum (pr);
       elseif (isnumeric (Prior))
         if (numel (gnY) != numel (Prior))
-          error (strcat (["ClassificationKNN: the elements in Prior do not"], ...
-                         [" correspond to selected classes in Y."]));
+          error (strcat (["ClassificationKNN: the elements in 'Prior'"], ...
+                         [" do not correspond to selected classes in Y."]));
         endif
         this.Prior = Prior ./ sum (Prior);
       endif
@@ -529,9 +595,9 @@ classdef ClassificationKNN
         this.Cost = cast (! eye (numel (gnY)), "double");
       else
         if (numel (gnY) != sqrt (numel (Cost)))
-          error (strcat (["ClassificationKNN: the number of rows and"], ...
-                         [" columns in Cost must correspond to selected"], ...
-                         [" classes in Y."]));
+          error (strcat (["ClassificationKNN: the number of rows"], ...
+                         [" and columns in 'Cost' must correspond"], ...
+                         [" to selected classes in Y."]));
         endif
         this.Cost = Cost;
       endif
@@ -557,16 +623,16 @@ classdef ClassificationKNN
       ## Handle distance metric parameters (Scale, Cov, Exponent)
       if (! isempty (Scale))
         if (! strcmpi (Distance, "seuclidean"))
-          error (strcat (["ClassificationKNN: Scale is only valid when"], ...
-                         [" distance metric is seuclidean."]));
+          error (strcat (["ClassificationKNN: 'Scale' is only valid"], ...
+                         [" when distance metric is seuclidean."]));
         endif
         if (numel (Scale) != ndims_X)
-          error (strcat (["ClassificationKNN: Scale vector must have"], ...
+          error (strcat (["ClassificationKNN: 'Scale' vector must have"], ...
                          [" equal length to the number of columns in X."]));
         endif
         if (any (Scale < 0))
-          error (strcat (["ClassificationKNN: Scale vector must contain"], ...
-                         [" nonnegative scalar values."]));
+          error (strcat (["ClassificationKNN: 'Scale' vector must"], ...
+                         [" contain nonnegative scalar values."]));
         endif
         this.DistParameter = Scale;
       else
@@ -580,12 +646,12 @@ classdef ClassificationKNN
       endif
       if (! isempty (Cov))
         if (! strcmpi (Distance, "mahalanobis"))
-          error (strcat (["ClassificationKNN: Cov is only valid when"], ...
-                         [" distance metric is mahalanobis."]));
+          error (strcat (["ClassificationKNN: 'Cov' is only valid"], ...
+                         [" when distance metric is 'mahalanobis'."]));
         endif
         if (columns (Cov) != ndims_X)
-          error (strcat (["ClassificationKNN: Cov matrix must have"], ...
-                         [" equal columns as X."]));
+          error (strcat (["ClassificationKNN: 'Cov' matrix"], ...
+                         [" must have equal columns as X."]));
         endif
         this.DistParameter = Cov;
       else
@@ -595,8 +661,8 @@ classdef ClassificationKNN
       endif
       if (! isempty (Exponent))
         if (! strcmpi (Distance, "minkowski"))
-          error (strcat (["ClassificationKNN: Exponent is only valid when"], ...
-                         [" distance metric is minkowski."]));
+          error (strcat (["ClassificationKNN: 'Exponent' is only"], ...
+                         [" valid when distance metric is 'minkowski'."]));
         endif
         this.DistParameter = Exponent;
       else
@@ -609,9 +675,9 @@ classdef ClassificationKNN
       kdm = {"euclidean", "cityblock", "manhattan", "minkowski", "chebychev"};
       if (! isempty (NSMethod))
         if (strcmpi ("kdtree", NSMethod) && (! any (strcmpi (kdm, Distance))))
-          error (strcat (["ClassificationKNN: kdtree method is only valid"], ...
-                         [" for euclidean, cityblock, manhattan,"], ...
-                         [" minkowski, and chebychev distance metrics."]));
+          error (strcat (["ClassificationKNN: 'kdtree' method is only va"], ...
+                         ["lid for 'euclidean', 'cityblock', 'manhattan',"], ...
+                         [" 'minkowski', and 'chebychev' distance metrics."]));
         endif
         this.NSMethod = NSMethod;
       else
@@ -629,30 +695,41 @@ classdef ClassificationKNN
     endfunction
 
     ## -*- texinfo -*-
-    ## @deftypefn  {ClassificationKNN} {@var{label} =} predict (@var{obj}, @var{XC})
-    ## @deftypefnx {ClassificationKNN} {[@var{label}, @var{score}, @var{cost}] =} predict (@var{obj}, @var{XC})
+    ## @deftypefn  {ClassificationKNN} {@var{labels} =} predict (@var{obj}, @var{XC})
+    ## @deftypefnx {ClassificationKNN} {[@var{labels}, @var{scores}, @var{cost}] =} predict (@var{obj}, @var{XC})
     ##
     ## Classify new data points into categories using the kNN algorithm from a
     ## k-Nearest Neighbor classification model.
     ##
-    ## @code{@var{label} = predict (@var{obj}, @var{XC})} returns the matrix of
+    ## @code{@var{labels} = predict (@var{obj}, @var{XC})} returns the matrix of
     ## labels predicted for the corresponding instances in @var{XC}, using the
     ## predictor data in @code{obj.X} and corresponding labels, @code{obj.Y},
     ## stored in the k-Nearest Neighbor classification model, @var{obj}.
     ##
+    ## @itemize
+    ## @item
+    ## @var{obj} must be a @qcode{ClassificationKNN} class object.
+    ## @item
     ## @var{XC} must be an @math{MxP} numeric matrix with the same number of
-    ## features @math{P} as the corresponding predictors of the kNN model in
+    ## features @math{P} as the corresponding predictors of the SVM model in
     ## @var{obj}.
+    ## @end itemize
     ##
-    ## @code{[@var{label}, @var{score}, @var{cost}] = predict (@var{obj}, @var{XC})}
-    ## also returns @var{score}, which contains the predicted class scores or
-    ## posterior probabilities for each instance of the corresponding unique
-    ## classes, and @var{cost}, which is a matrix containing the expected cost
-    ## of the classifications.
+    ## @code{[@var{labels}, @var{scores}, @var{cost}] = predict (@var{obj},
+    ## @var{XC})} also returns @var{scores}, which contains the predicted class
+    ## scores or posterior probabilities for each instance of the corresponding
+    ## unique classes, and @var{cost}, which is a matrix containing the expected
+    ## cost of the classifications.  By default, @var{scores} returns the
+    ## posterior probabilities for KNN models, unless a specific ScoreTransform
+    ## function has been specified.  See @code{fitcknn} for more info.
     ##
-    ## @seealso{fitcknn, ClassificationKNN}
+    ## Note! @code{predict} is explicitly using @qcode{"exhaustive"} as the
+    ## nearest search method due to the very slow implementation of
+    ## @qcode{"kdtree"} in the @code{knnsearch} function.
+    ##
+    ## @seealso{fitcknn, ClassificationKNN, knnsearch}
     ## @end deftypefn
-    function [label, score, cost] = predict (this, XC)
+    function [labels, scores, cost] = predict (this, XC)
 
       ## Check for sufficient input arguments
       if (nargin < 2)
@@ -680,35 +757,35 @@ classdef ClassificationKNN
       ## Train kNN
       if (strcmpi (this.Distance, "seuclidean"))
         [idx, dist] = knnsearch (X, XC, "k", this.NumNeighbors, ...
-                      "NSMethod", this.NSMethod, "Distance", "seuclidean", ...
+                      "NSMethod", "exhaustive", "Distance", "seuclidean", ...
                       "Scale", this.DistParameter, "sortindices", true, ...
                       "includeties", this.IncludeTies, ...
                       "bucketsize", this.BucketSize);
 
       elseif (strcmpi (this.Distance, "mahalanobis"))
         [idx, dist] = knnsearch (X, XC, "k", this.NumNeighbors, ...
-                      "NSMethod", this.NSMethod, "Distance", "mahalanobis", ...
+                      "NSMethod", "exhaustive", "Distance", "mahalanobis", ...
                       "cov", this.DistParameter, "sortindices", true, ...
                       "includeties", this.IncludeTies, ...
                       "bucketsize", this.BucketSize);
 
       elseif (strcmpi (this.Distance, "minkowski"))
         [idx, dist] = knnsearch (X, XC, "k", this.NumNeighbors, ...
-                      "NSMethod", this.NSMethod, "Distance", "minkowski", ...
+                      "NSMethod", "exhaustive", "Distance", "minkowski", ...
                       "P", this.DistParameter, "sortindices", true, ...
                       "includeties",this.IncludeTies, ...
                       "bucketsize", this.BucketSize);
 
       else
         [idx, dist] = knnsearch (X, XC, "k", this.NumNeighbors, ...
-                      "NSMethod", this.NSMethod, "Distance", this.Distance, ...
+                      "NSMethod", "exhaustive", "Distance", this.Distance, ...
                       "sortindices", true, "includeties", this.IncludeTies, ...
                       "bucketsize", this.BucketSize);
       endif
 
       ## Make prediction
-      label = {};
-      score = [];
+      labels = {};
+      scores = [];
       cost  = [];
 
       ## Get IDs and labels for each point in training data
@@ -733,7 +810,7 @@ classdef ClassificationKNN
           freq(c) = sum (kNNgY == c) / k;
         endfor
 
-        ## Get label according to BreakTies
+        ## Get labels according to BreakTies
         if (strcmpi (this.BreakTies, "smallest"))
           [~, idl] = max (freq);
         else
@@ -751,13 +828,796 @@ classdef ClassificationKNN
             endif
           endif
         endif
-        label = [label; gnY{idl}];
+        labels = [labels; gnY{idl}];
 
-        ## Calculate score and cost
-        score = [score; freq];
+        ## Calculate scores and cost
+        scores = [scores; freq];
         cost = [cost; 1-freq];
 
+        ## Apply ScoreTransform (if applicable)
+        if (! strcmp (this.ScoreTransform, "none"))
+          f = this.ScoreTransform;
+          if (! strcmp (class (f), "function_handle"))
+            error (strcat (["ClassificationKNN.predict: 'ScoreTransform'"], ...
+                           [" must be a 'function_handle' object."]));
+          endif
+          scores = f (scores);
+        endif
+
       endfor
+
+    endfunction
+
+    ## -*- texinfo -*-
+    ## @deftypefn  {ClassificationKNN} {@var{L} =} loss (@var{obj}, @var{X}, @var{Y})
+    ## @deftypefnx {ClassificationKNN} {@var{L} =} loss (@dots{}, @var{name}, @var{value})
+    ##
+    ## Compute loss for a trained ClassificationKNN object.
+    ##
+    ## @code{@var{L} = loss (@var{obj}, @var{X}, @var{Y})} computes the loss,
+    ## @var{L}, using the default loss function @qcode{'mincost'}.
+    ##
+    ## @itemize
+    ## @item
+    ## @code{obj} is a @var{ClassificationKNN} object trained on @code{X} and
+    ## @code{Y}.
+    ## @item
+    ## @code{X} must be a @math{NxP} numeric matrix of input data where rows
+    ## correspond to observations and columns correspond to features or
+    ## variables.
+    ## @item
+    ## @code{Y} is @math{Nx1} matrix or cell matrix containing the class labels
+    ## of corresponding predictor data in @var{X}.  @var{Y} must have same
+    ## numbers of Rows as @var{X}.
+    ## @end itemize
+    ##
+    ## @code{@var{L} = loss (@dots{}, @var{name}, @var{value})} allows
+    ## additional options specified by @var{name}-@var{value} pairs:
+    ##
+    ## @multitable @columnfractions 0.18 0.02 0.8
+    ## @headitem @var{Name} @tab @tab @var{Value}
+    ##
+    ## @item @qcode{"LossFun"} @tab @tab Specifies the loss function to use.
+    ## Can be a function handle with four input arguments (C, S, W, Cost)
+    ## which returns a scalar value or one of:
+    ## 'binodeviance', 'classifcost', 'classiferror', 'exponential',
+    ## 'hinge', 'logit','mincost', 'quadratic'.
+    ## @itemize
+    ## @item
+    ## @code{C} is a logical matrix of size @math{NxK}, where @math{N} is the
+    ## number of observations and @math{K} is the number of classes.
+    ## The element @code{C(i,j)} is true if the class label of the i-th
+    ## observation is equal to the j-th class.
+    ## @item
+    ## @code{S} is a numeric matrix of size @math{NxK}, where each element
+    ## represents the classification score for the corresponding class.
+    ## @item
+    ## @code{W} is a numeric vector of length @math{N}, representing
+    ## the observation weights.
+    ## @item
+    ## @code{Cost} is a @math{KxK} matrix representing the misclassification
+    ## costs.
+    ## @end itemize
+    ##
+    ## @item @qcode{"Weights"} @tab @tab Specifies observation weights, must be
+    ## a numeric vector of length equal to the number of rows in X.
+    ## Default is @code{ones (size (X, 1))}. loss normalizes the weights so that
+    ## observation weights in each class sum to the prior probability of that
+    ## class. When you supply Weights, loss computes the weighted
+    ## classification loss.
+    ##
+    ## @end multitable
+    ##
+    ## @seealso{fitcknn, ClassificationKNN}
+    ## @end deftypefn
+    function L = loss (this, X, Y, varargin)
+
+      ## Check for sufficient input arguments
+      if (nargin < 3)
+        error ("ClassificationKNN.loss: too few input arguments.");
+      elseif (mod (nargin - 3, 2) != 0)
+        error (["ClassificationKNN.loss: name-value arguments must be in", ...
+                " pairs."]);
+      elseif (nargin > 7)
+        error ("ClassificationKNN.loss: too many input arguments.");
+      endif
+
+      ## Default values
+      LossFun = 'mincost';
+      Weights = [];
+
+      ## Validate Y
+      valid_types = {'char', 'string', 'logical', 'single', 'double', 'cell'};
+      if (! (any (strcmp (class (Y), valid_types))))
+        error ("ClassificationKNN.loss: Y must be of a valid type.");
+      endif
+
+      ## Validate size of Y
+      if (size (Y, 1) != size (X, 1))
+        error (["ClassificationKNN.loss: Y must have the same number", ...
+                " of rows as X."]);
+      endif
+
+      ## Parse name-value arguments
+      while (numel (varargin) > 0)
+        Value = varargin{2};
+        switch (tolower (varargin{1}))
+          case 'lossfun'
+            if (isa (Value, 'function_handle'))
+              ## Check if the loss function is valid
+              if (nargin (Value) != 4)
+                error (["ClassificationKNN.loss: custom loss function", ...
+                        " must accept exactly four input arguments."]);
+              endif
+              try
+                n = 1;
+                K = 2;
+                C_test = false (n, K);
+                S_test = zeros (n, K);
+                W_test = ones (n, 1);
+                Cost_test = ones (K) - eye (K);
+                test_output = Value (C_test, S_test, W_test, Cost_test);
+                if (! isscalar (test_output))
+                  error (["ClassificationKNN.loss: custom loss function", ...
+                          " must return a scalar value."]);
+                endif
+              catch
+                error (["ClassificationKNN.loss: custom loss function", ...
+                        " is not valid or does not produce correct output."]);
+              end_try_catch
+              LossFun = Value;
+            elseif (ischar (Value) && any (strcmpi (Value, {"binodeviance", ...
+                "classifcost", "classiferror", "exponential", "hinge", ...
+                "logit", "mincost", "quadratic"})))
+              LossFun = Value;
+            else
+              error ("ClassificationKNN.loss: invalid loss function.");
+            endif
+          case 'weights'
+            if (isnumeric (Value) && isvector (Value))
+              if (numel (Value) != size (X ,1))
+                error (["ClassificationKNN.loss: size of Weights must", ...
+                        " be equal to the number of rows in X."]);
+              elseif (numel (Value) == size (X, 1))
+                Weights = Value;
+              endif
+            else
+              error ("ClassificationKNN.loss: invalid Weights.");
+            endif
+          otherwise
+            error ("ClassificationKNN.loss: invalid name-value arguments.");
+        endswitch
+        varargin (1:2) = [];
+      endwhile
+
+      ## Check for missing values in X
+      if (! isa (LossFun, 'function_handle'))
+        lossfun = tolower (LossFun);
+        if (! strcmp (lossfun, 'mincost') && ! strcmp (lossfun, ...
+         'classiferror') && ! strcmp (lossfun, 'classifcost') ...
+          && any (isnan (X(:))))
+            L = NaN;
+            return;
+        endif
+      endif
+
+      ## Convert Y to a cell array of strings
+      if (ischar (Y))
+        Y = cellstr (Y);
+      elseif (isnumeric (Y))
+        Y = cellstr (num2str (Y));
+      elseif (islogical (Y))
+        Y = cellstr (num2str (double (Y)));
+      elseif (iscell (Y))
+        Y = cellfun (@num2str, Y, 'UniformOutput', false);
+      else
+        error (["ClassificationKNN.loss: Y must be a numeric,", ...
+                " logical, char, string, or cell array."]);
+      endif
+
+      ## Check if Y contains correct classes
+      if (! all (ismember (unique (Y), this.ClassNames)))
+        error (["ClassificationKNN.loss: Y must contain only", ...
+                " the classes in ClassNames."]);
+      endif
+
+      ## Set default weights if not specified
+      if (isempty (Weights))
+        Weights = ones (size (X, 1), 1);
+      endif
+
+      ## Normalize Weights
+      unique_classes = this.ClassNames;
+      class_prior_probs = this.Prior;
+      norm_weights = zeros (size (Weights));
+      for i = 1:numel (unique_classes)
+        class_idx = ismember (Y, unique_classes{i});
+        if (sum (Weights(class_idx)) > 0)
+          norm_weights(class_idx) = ...
+          Weights(class_idx) * class_prior_probs(i) / sum (Weights(class_idx));
+        endif
+      endfor
+      Weights = norm_weights / sum (norm_weights);
+
+      ## Number of observations
+      n = size (X, 1);
+
+      ## Predict classification scores
+      [label, scores] = predict (this, X);
+
+      ## C is vector of K-1 zeros, with 1 in the
+      ## position corresponding to the true class
+      K = numel (this.ClassNames);
+      C = false (n, K);
+      for i = 1:n
+        class_idx = find (ismember (this.ClassNames, Y{i}));
+        C(i, class_idx) = true;
+      endfor
+      Y_new = C';
+
+      ## Compute the loss using custom loss function
+      if (isa (LossFun, 'function_handle'))
+        L = LossFun (C, scores, Weights, this.Cost);
+        return;
+      endif
+
+      ## Compute the scalar classification score for each observation
+      m_j = zeros (n, 1);
+      for i = 1:n
+        m_j(i) = scores(i,:) * Y_new(:,i);
+      endfor
+
+      ## Compute the loss
+      switch (tolower (LossFun))
+        case 'binodeviance'
+          b = log (1 + exp (-2 * m_j));
+          L = (Weights') * b;
+        case 'hinge'
+          h = max (0, 1 - m_j);
+          L = (Weights') * h;
+        case 'exponential'
+          e = exp (-m_j);
+          L = (Weights') * e;
+        case 'logit'
+          l = log (1 + exp (-m_j));
+          L = (Weights') * l;
+        case 'quadratic'
+          q = (1 - m_j) .^ 2;
+          L = (Weights') * q;
+        case 'classiferror'
+          L = 0;
+          for i = 1:n
+            L = L + Weights(i) * (! isequal (Y(i), label(i)));
+          endfor
+        case 'mincost'
+          Cost = this.Cost;
+          L = 0;
+          for i = 1:n
+            f_Xj = scores(i, :);
+            gamma_jk = f_Xj * Cost;
+            [~, min_cost_class] = min (gamma_jk);
+            cj = Cost(find (ismember (this.ClassNames, Y(i))), min_cost_class);
+            L = L + Weights(i) * cj;
+          endfor
+        case 'classifcost'
+          Cost = this.Cost;
+          L = 0;
+          for i = 1:n
+            y_idx = find (ismember (this.ClassNames, Y(i)));
+            y_hat_idx = find (ismember (this.ClassNames, label(i)));
+            L = L + Weights(i) * Cost(y_idx, y_hat_idx);
+          endfor
+        otherwise
+          error ("ClassificationKNN.loss: invalid loss function.");
+      endswitch
+
+    endfunction
+
+    ## -*- texinfo -*-
+    ## @deftypefn {ClassificationKNN} {@var{m} =} margin (@var{obj}, @var{X}, @var{Y})
+    ##
+    ## @code{@var{m} = margin (@var{obj}, @var{X}, @var{Y})} returns
+    ## the classification margins for @var{obj} with data @var{X} and
+    ## classification @var{Y}. @var{m} is a numeric vector of length size (X,1).
+    ##
+    ## @itemize
+    ## @item
+    ## @code{obj} is a @var{ClassificationKNN} object trained on @code{X}
+    ## and @code{Y}.
+    ## @item
+    ## @code{X} must be a @math{NxP} numeric matrix of input data where rows
+    ## correspond to observations and columns correspond to features or
+    ## variables.
+    ## @item
+    ## @code{Y} is @math{Nx1} matrix or cell matrix containing the class labels
+    ## of corresponding predictor data in @var{X}. @var{Y} must have same
+    ## numbers of Rows as @var{X}.
+    ## @end itemize
+    ##
+    ## The classification margin for each observation is the difference between
+    ## the classification score for the true class and the maximal
+    ## classification score for the false classes.
+    ##
+    ## @seealso{fitcknn, ClassificationKNN}
+    ## @end deftypefn
+    function m = margin (this, X, Y)
+
+      ## Check for sufficient input arguments
+      if (nargin < 3)
+        error ("ClassificationKNN.margin: too few input arguments.");
+      endif
+
+      ## Validate Y
+      valid_types = {'char', 'string', 'logical', 'single', 'double', 'cell'};
+      if (! (any (strcmp (class (Y), valid_types))))
+        error ("ClassificationKNN.margin: Y must be of a valid type.");
+      endif
+
+      ## Validate X
+      valid_types = {'single', 'double'};
+      if (! (any (strcmp (class (X), valid_types))))
+        error ("ClassificationKNN.margin: X must be of a valid type.");
+      endif
+
+      ## Validate size of Y
+      if (size (Y, 1) != size (X, 1))
+        error (["ClassificationKNN.margin: Y must have the same", ...
+                " number of rows as X."]);
+      endif
+
+      ## Convert Y to a cell array of strings
+      if (ischar (Y))
+        Y = cellstr (Y);
+      elseif (isnumeric (Y))
+        Y = cellstr (num2str (Y));
+      elseif (islogical (Y))
+        Y = cellstr (num2str (double (Y)));
+      elseif (iscell (Y))
+        Y = cellfun (@num2str, Y, 'UniformOutput', false);
+      else
+        error (["ClassificationKNN.margin: Y must be a numeric,", ...
+                " logical, char, string, or cell array."]);
+      endif
+
+      ## Check if Y contains correct classes
+      if (! all (ismember (unique (Y), this.ClassNames)))
+        error (["ClassificationKNN.margin: Y must contain only", ...
+                " the classes in ClassNames."]);
+      endif
+
+      ## Number of Observations
+      n = size (X, 1);
+
+      ## Initialize the margin vector
+      m = zeros (n, 1);
+
+      ## Calculate the classification scores
+      [~, scores] = predict (this, X);
+
+      ## Loop over each observation to compute the margin
+      for i = 1:n
+        ## True class index
+        true_class_idx = find (ismember (this.ClassNames, Y{i}));
+
+        ## Score for the true class
+        true_class_score = scores(i, true_class_idx);
+
+        ## Get the maximal score for the false classes
+        scores(i, true_class_idx) = -Inf;              ## Temporarily
+        max_false_class_score = max (scores(i, :));
+        if (max_false_class_score == -Inf)
+          m = NaN;
+          return;
+        endif
+        scores(i, true_class_idx) = true_class_score;  ## Restore
+
+        ## Calculate the margin
+        m(i) = true_class_score - max_false_class_score;
+      endfor
+
+    endfunction
+
+    ## -*- texinfo -*-
+    ## @deftypefn {ClassificationKNN} {@var{[pd, x, y]} =} partialDependence (@var{obj}, @var{Vars}, @var{Labels})
+    ## @deftypefnx {ClassificationKNN} {@var{[pd, x, y]} =} partialDependence (@dots{}, @var{Data})
+    ## @deftypefnx {ClassificationKNN} {@var{[pd, x, y]} =} partialDependence (@dots{}, @var{name}, @var{value})
+    ##
+    ## Compute partial dependence for a trained ClassificationKNN object.
+    ##
+    ## @code{@var{[pd, x, y]} = partialDependence (@var{obj}, @var{Vars},
+    ## @var{Labels})}
+    ## computes the partial dependence of the classification scores on the
+    ## variables @var{Vars} for the specified class @var{Labels}.
+    ##
+    ## @itemize
+    ## @item
+    ## @code{obj} is a trained @var{ClassificationKNN} object.
+    ## @item
+    ## @code{Vars} is a vector of positive integers, character vector,
+    ## string array, or cell array of character
+    ## vectors representing predictor variables (it can be indices of
+    ## predictor variables in @var{obj.X}).
+    ## @item
+    ## @code{Labels} is a character vector, logical vector, numeric vector,
+    ## or cell array of character vectors representing class
+    ## labels. (column vector)
+    ## @end itemize
+    ##
+    ## @code{@var{[pd, x, y]} = partialDependence (@dots{}, @var{Data})}
+    ## specifies new predictor data to use for computing the partial dependence.
+    ##
+    ## @code{@var{[pd, x, y]} = partialDependence (@dots{}, @var{name},
+    ## @var{value})} allows additional options specified by name-value pairs:
+    ##
+    ## @multitable @columnfractions 0.32 0.02 0.7
+    ## @headitem @var{Name} @tab @tab @var{Value}
+    ##
+    ## @item @qcode{"NumObservationsToSample"} @tab @tab Number of
+    ## observations to sample. Must be a positive integer. Defaults to the
+    ## number of observations in the training data.
+    ## @item @qcode{"QueryPoints"} @tab @tab Points at which to evaluate
+    ## the partial dependence.
+    ## Must be a numeric column vector, numeric two-column matrix, or
+    ## cell array of character column vectors.
+    ## @item @qcode{"UseParallel"} @tab @tab Logical value indicating
+    ## whether to perform computations in parallel.
+    ## Defaults to @code{false}.
+    ## @end multitable
+    ##
+    ## @subheading Return Values
+    ## @itemize
+    ## @item @code{pd}: Partial dependence values.
+    ## @item @code{x}: Query points for the first predictor variable in Vars.
+    ## @item @code{y}: Query points for the second predictor variable in
+    ## Vars (if applicable).
+    ## @end itemize
+    ##
+    ## @seealso{fitcknn, ClassificationKNN}
+    ## @end deftypefn
+
+    function [pd, x, y] = partialDependence (this, Vars, Labels, varargin)
+      if (nargin < 3)
+        error ("ClassificationKNN.partialDependence: too few input arguments.");
+      endif
+
+      ## Validate Vars
+      if (isnumeric (Vars))
+        if (! all (Vars > 0) || ! (numel (Vars) == 1 || numel (Vars) == 2))
+          error (["ClassificationKNN.partialDependence: vars must be a", ...
+                  " positive integer or vector of two positive integers."]);
+        endif
+      elseif (iscellstr (Vars))
+        if (! (numel (Vars) == 1 || numel (Vars) == 2))
+          error (["ClassificationKNN.partialDependence: vars must be a", ...
+                  " string array or cell array of one or two character", ...
+                  " vectors."]);
+        endif
+        Vars = cellfun (@(v) find (strcmp (this.PredictorNames, v)), Vars);
+      elseif (ischar (Vars))
+        Vars = find (strcmp (this.PredictorNames, Vars));
+        if (isempty (Vars))
+          error (["ClassificationKNN.partialDependence: vars must", ...
+                  " match one of the predictor names."]);
+        endif
+      else
+        error (["ClassificationKNN.partialDependence: vars must be", ...
+                " a string, or cell array."]);
+      endif
+
+      ## Validate Labels
+      if (! (ischar (Labels) || islogical (Labels) || ...
+          isnumeric (Labels) || iscellstr (Labels)))
+        error ("ClassificationKNN.partialDependence: invalid type for Labels.");
+      endif
+
+      ## Convert Labels to a cell array of strings
+      if (ischar (Labels))
+        Labels = cellstr (Labels);
+      elseif (isnumeric (Labels))
+        Labels = cellstr (num2str (Labels));
+      elseif (islogical (Labels))
+        Labels = cellstr (num2str (double (Labels)));
+      elseif (iscell (Labels))
+        Labels = cellfun (@num2str, Labels, 'UniformOutput', false);
+      else
+        error (["ClassificationKNN.partialDependence: labels must be", ...
+                " a numeric, logical, string, or cell array."]);
+      endif
+
+      ## Additional validation to match ClassNames
+      if (! all (ismember (Labels, this.ClassNames)))
+        error (["ClassificationKNN.partialDependence: labels must match", ...
+                "the class names in the ClassNames property."]);
+      endif
+
+      ## Default values
+      Data = this.X;
+      UseParallel = false;
+      NumObservationsToSample = size (Data, 1);
+      QueryPoints = [];
+
+      ## Check for Data and other optional arguments
+      if (nargin > 3)
+        if (size (varargin{1}) == size (this.X))
+          Data = varargin{1};
+          ## Ensure Data consistency
+          if (! all (size (Data, 2) == numel (this.PredictorNames)))
+            error (["ClassificationKNN.partialDependence: data must have", ...
+                    " the same number and order of columns as the", ...
+                    " predictor variables."]);
+          endif
+
+          ## Ensure Name-Value pairs are even length
+          if (mod (nargin - 4, 2) != 0)
+            error (["ClassificationKNN.partialDependence: name-value", ...
+                    " arguments must be in pairs."]);
+          endif
+
+          ## Set the number of observations to sample
+          NumObservationsToSample = size (Data, 1);
+          idx = 2;
+        else
+          ## Ensure Name-Value pairs are even length
+          if (mod (nargin - 3, 2) != 0)
+            error (["ClassificationKNN.partialDependence: name-value", ...
+                    " arguments must be in pairs."]);
+          endif
+          idx = 1;
+        endif
+
+        ## Handle name-value pair arguments
+        for i = idx:2:length (varargin)
+          if (! ischar (varargin{i}))
+            error (["ClassificationKNN.partialDependence: name arguments", ...
+                    " must be strings."]);
+          endif
+          Value = varargin{i+1};
+          ## Parse name-value pairs
+          switch (lower (varargin{i}))
+            case 'numobservationstosample'
+              if (! isnumeric (Value) || Value <= 0 || Value != round (Value))
+                error (["ClassificationKNN.partialDependence: ", ...
+                        "NumObservationsToSample must be a positive integer."]);
+              endif
+              NumObservationsToSample = Value;
+              if (Value > size (Data, 1))
+                NumObservationsToSample = size (Data, 1);
+              endif
+            case 'querypoints'
+              if (! isnumeric (Value) && ! iscell (Value))
+                error (["ClassificationKNN.partialDependence: QueryPoints", ...
+                        " must be a numeric column vector, numeric", ...
+                        " two-column matrix, or cell array of", ...
+                        " character column vectors."]);
+              endif
+              QueryPoints = Value;
+            case 'useparallel'
+              if (! islogical (UseParallel))
+                error (["ClassificationKNN.partialDependence: ", ...
+                        "UseParallel must be a logical value."]);
+              endif
+              UseParallel = Value;
+            otherwise
+              error (["ClassificationKNN.partialDependence: ", ...
+                      "name-value pair argument not recognized."]);
+          endswitch
+        endfor
+      endif
+
+      ## Sample observations if needed
+      if (NumObservationsToSample < size (Data, 1))
+        Data = datasample (Data, NumObservationsToSample, 'Replace', false);
+      endif
+
+      ## Generate QueryPoints if not specified
+      if (isempty (QueryPoints))
+        if (numel (Vars) == 1)
+          if (isnumeric (Data(:, Vars)))
+            QueryPoints = linspace(min (Data(:, Vars)), ...
+                                max (Data(:, Vars)), 100)';
+          else
+            QueryPoints = unique (Data(:, Vars));
+          endif
+        else
+          QueryPoints = cell (1, numel (Vars));
+          for j = 1:numel (Vars)
+            if (isnumeric (Data(:, Vars(j))))
+              QueryPoints{j} = linspace(min (Data(:, Vars(j))), ...
+                                max (Data(:, Vars(j))), 100)';
+            else
+              QueryPoints{j} = unique (Data(:, Vars(j)));
+            endif
+          endfor
+        endif
+      endif
+
+      ## Prepare grid points for predictions
+      if (numel (Vars) == 1)
+        gridPoints = QueryPoints;
+      else
+        if (ischar (QueryPoints))
+          [X1, X2] = meshgrid (QueryPoints(1), QueryPoints(2));
+        else
+          [X1, X2] = meshgrid (QueryPoints{1}, QueryPoints{2});
+        endif
+        gridPoints = [X1(:), X2(:)];
+      endif
+
+      ## Predict responses for the grid points
+      numClasses = numel (this.ClassNames);
+      numQueryPoints = size (gridPoints, 1);
+      predictions = zeros (numQueryPoints, numClasses);
+
+      if (UseParallel)
+        parfor i = 1:numQueryPoints
+          tempData = Data;
+          for j = 1:numel (Vars)
+            tempData(:, Vars(j)) = repmat (gridPoints(i, j), ...
+                                    NumObservationsToSample, 1);
+          endfor
+          [~, scores] = predict (this, tempData);
+          predictions(i, :) = mean (scores, 1);
+        endparfor
+      else
+        for i = 1:numQueryPoints
+          tempData = Data;
+          for j = 1:numel (Vars)
+            tempData(:, Vars(j)) = repmat (gridPoints(i, j), ...
+                                    NumObservationsToSample, 1);
+          endfor
+          [~, scores] = predict (this, tempData);
+          predictions(i, :) = mean (scores, 1);
+        endfor
+      endif
+
+      ## Compute partial dependence
+      if (numel (Vars) == 1)
+        if (numel (Labels) == 1)
+          classIndex = find (strcmp (this.ClassNames, Labels));
+          pd = predictions(:, classIndex)';
+        else
+          pd = zeros (numel (Labels), numel (QueryPoints));
+          for j = 1:numel (Labels)
+            classIndex = find (strcmp (this.ClassNames, Labels{j}));
+            pd(j, :) = predictions(:, classIndex)';
+          endfor
+        endif
+        x = QueryPoints;
+        y = [];
+      else
+        if (numel (Labels) == 1)
+          classIndex = find (strcmp (this.ClassNames, Labels));
+          pd = reshape (predictions(:, classIndex), numel (QueryPoints{1}), ...
+                numel (QueryPoints{2}));
+        else
+          pd = zeros (numel (Labels), numel (QueryPoints{1}), ...
+                numel (QueryPoints{2}));
+          for j = 1:numel (Labels)
+            classIndex = find (strcmp (this.ClassNames, Labels{j}));
+            pd(j, :, :) = reshape (predictions(:, classIndex), ...
+                          numel (QueryPoints{1}), numel (QueryPoints{2}));
+          endfor
+        endif
+        x = QueryPoints{1};
+        y = QueryPoints{2};
+      endif
+
+    endfunction
+
+    ## -*- texinfo -*-
+    ## @deftypefn  {ClassificationSVM} {@var{CVMdl} =} crossval (@var{obj})
+    ## @deftypefnx {ClassificationSVM} {@var{CVMdl} =} crossval (@dots{}, @var{Name}, @var{Value})
+    ##
+    ## Cross Validate a Support Vector Machine classification object.
+    ##
+    ## @code{@var{CVMdl} = crossval (@var{obj})} returns a cross-validated model
+    ## object, @var{CVMdl}, from a trained model, @var{obj}, using 10-fold
+    ## cross-validation by default.
+    ##
+    ## @code{@var{CVMdl} = crossval (@var{obj}, @var{name}, @var{value})}
+    ## specifies additional name-value pair arguments to customize the
+    ## cross-validation process.
+    ##
+    ## @multitable @columnfractions 0.28 0.02 0.7
+    ## @headitem @var{Name} @tab @tab @var{Value}
+    ##
+    ## @item @qcode{"KFold"} @tab @tab Specify the number of folds to use in
+    ## k-fold cross-validation.  @code{"KFold", @var{k}}, where @var{k} is an
+    ## integer greater than 1.
+    ##
+    ## @item @qcode{"Holdout"} @tab @tab Specify the fraction of the data to
+    ## hold out for testing.  @code{"Holdout", @var{p}}, where @var{p} is a
+    ## scalar in the range @math{(0,1)}.
+    ##
+    ## @item @qcode{"Leaveout"} @tab @tab Specify whether to perform
+    ## leave-one-out cross-validation.  @code{"Leaveout", @var{Value}}, where
+    ## @var{Value} is 'on' or 'off'.
+    ##
+    ## @item @qcode{"CVPartition"} @tab @tab Specify a @qcode{cvpartition}
+    ## object used for cross-validation.  @code{"CVPartition", @var{cv}}, where
+    ## @code{isa (@var{cv}, "cvpartition")} = 1.
+    ##
+    ## @end multitable
+    ##
+    ## @seealso{fitcknn, ClassificationKNN, cvpartition,
+    ## ClassificationPartitionedModel}
+    ## @end deftypefn
+
+    function CVMdl = crossval (this, varargin)
+      ## Check input
+      if (nargin < 1)
+        error ("ClassificationKNN.crossval: too few input arguments.");
+      endif
+
+      if (numel (varargin) == 1)
+        error (strcat (["ClassificationKNN.crossval: Name-Value arguments"], ...
+                       [" must be in pairs."]));
+      elseif (numel (varargin) > 2)
+        error (strcat (["ClassificationKNN.crossval: specify only one of"], ...
+                       [" the optional Name-Value paired arguments."]));
+      endif
+
+      numSamples  = size (this.X, 1);
+      numFolds    = 10;
+      Holdout     = [];
+      Leaveout    = 'off';
+      CVPartition = [];
+
+      ## Parse extra parameters
+      while (numel (varargin) > 0)
+        switch (tolower (varargin {1}))
+
+          case 'kfold'
+            numFolds = varargin{2};
+            if (! (isnumeric (numFolds) && isscalar (numFolds)
+                   && (numFolds == fix (numFolds)) && numFolds > 1))
+              error (strcat (["ClassificationKNN.crossval: 'KFold' must"], ...
+                             [" be an integer value greater than 1."]));
+            endif
+
+          case 'holdout'
+            Holdout = varargin{2};
+            if (! (isnumeric (Holdout) && isscalar (Holdout) && Holdout > 0
+                   && Holdout < 1))
+              error (strcat (["ClassificationKNN.crossval: 'Holdout' must"], ...
+                             [" be a numeric value between 0 and 1."]));
+            endif
+
+          case 'leaveout'
+            Leaveout = varargin{2};
+            if (! (ischar (Leaveout)
+                   && (strcmpi (Leaveout, 'on') || strcmpi (Leaveout, 'off'))))
+              error (strcat (["ClassificationKNN.crossval: 'Leaveout'"], ...
+                             [" must be either 'on' or 'off'."]));
+            endif
+
+          case 'cvpartition'
+            CVPartition = varargin{2};
+            if (!(isa (CVPartition, 'cvpartition')))
+              error (strcat (["ClassificationKNN.crossval: 'CVPartition'"],...
+                             [" must be a 'cvpartition' object."]));
+            endif
+
+          otherwise
+            error (strcat (["ClassificationKNN.crossval: invalid"],...
+                           [" parameter name in optional paired arguments."]));
+          endswitch
+        varargin (1:2) = [];
+      endwhile
+
+      ## Determine the cross-validation method to use
+      if (! isempty (CVPartition))
+        partition = CVPartition;
+      elseif (! isempty (Holdout))
+        partition = cvpartition (numSamples, 'Holdout', Holdout);
+      elseif (strcmpi (Leaveout, 'on'))
+        partition = cvpartition (numSamples, 'LeaveOut');
+      else
+        partition = cvpartition (numSamples, 'KFold', numFolds);
+      endif
+
+      ## Create a cross-validated model object
+      CVMdl = ClassificationPartitionedModel (this, partition);
 
     endfunction
 
@@ -765,6 +1625,18 @@ classdef ClassificationKNN
 
 endclassdef
 
+## Helper functions for ScoreTransform
+function out = ismax (score)
+  out = score;
+  out(score == max (score)) = 1;
+  out(score != max (score)) = 0;
+endfunction
+
+function out = symmetricismax (score)
+  out = score;
+  out(score == max (score)) = 1;
+  out(score != max (score)) = -1;
+endfunction
 
 %!demo
 %! ## Create a k-nearest neighbor classifier for Fisher's iris data with k = 5.
@@ -778,35 +1650,89 @@ endclassdef
 %! [label, score, cost] = predict (obj, xc)
 
 %!demo
-%! ## Train a k-nearest neighbor classifier for k = 10
-%! ## and plot the decision boundaries.
-%!
 %! load fisheriris
-%! idx = ! strcmp (species, "setosa");
-%! X = meas(idx,3:4);
-%! Y = cast (strcmpi (species(idx), "virginica"), "double");
-%! obj = fitcknn (X, Y, "Standardize", 1, "NumNeighbors", 10, "NSMethod", "exhaustive")
-%! x1 = [min(X(:,1)):0.03:max(X(:,1))];
-%! x2 = [min(X(:,2)):0.02:max(X(:,2))];
-%! [x1G, x2G] = meshgrid (x1, x2);
-%! XGrid = [x1G(:), x2G(:)];
-%! pred = predict (obj, XGrid);
-%! gidx = logical (str2num (cell2mat (pred)));
+%! x = meas;
+%! y = species;
+%! obj = fitcknn (x, y, "NumNeighbors", 5, "Standardize", 1);
 %!
-%! figure
-%! scatter (XGrid(gidx,1), XGrid(gidx,2), "markerfacecolor", "magenta");
-%! hold on
-%! scatter (XGrid(!gidx,1), XGrid(!gidx,2), "markerfacecolor", "red");
-%! plot (X(Y == 0, 1), X(Y == 0, 2), "ko", X(Y == 1, 1), X(Y == 1, 2), "kx");
-%! xlabel ("Petal length (cm)");
-%! ylabel ("Petal width (cm)");
-%! title ("5-Nearest Neighbor Classifier Decision Boundary");
-%! legend ({"Versicolor Region", "Virginica Region", ...
-%!         "Sampled Versicolor", "Sampled Virginica"}, ...
-%!         "location", "northwest")
-%! axis tight
-%! hold off
+%! ## Create a cross-validated model
+%! CVMdl = crossval (obj)
 
+%!demo
+%! load fisheriris
+%! x = meas;
+%! y = species;
+%! covMatrix = cov (x);
+%!
+%! ## Fit the k-NN model using the 'mahalanobis' distance
+%! ## and the custom covariance matrix
+%! obj = fitcknn(x, y, 'NumNeighbors', 5, 'Distance','mahalanobis', ...
+%! 'Cov', covMatrix);
+%!
+%! ## Create a partition model using cvpartition
+%! Partition = cvpartition (size (x, 1), 'kfold', 12);
+%!
+%! ## Create cross-validated model using 'cvPartition' name-value argument
+%! CVMdl = crossval (obj, 'cvPartition', Partition)
+%!
+%! ## Access the trained model from first fold of cross-validation
+%! CVMdl.Trained{1}
+
+%!demo
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = {'A'; 'B'; 'A'};
+%! model = fitcknn (X, Y);
+%! customLossFun = @(C, S, W, Cost) sum (W .* sum (abs (C - S), 2));
+%! ## Calculate loss using custom loss function
+%! L = loss (model, X, Y, 'LossFun', customLossFun)
+
+%!demo
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = {'A'; 'B'; 'A'};
+%! model = fitcknn (X, Y);
+%! ## Calculate loss using 'mincost' loss function
+%! L = loss (model, X, Y, 'LossFun', 'mincost')
+
+%!demo
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = ['1'; '2'; '3'];
+%! model = fitcknn (X, Y);
+%! X_test = [3, 3; 5, 7];
+%! Y_test = ['1'; '2'];
+%! ## Specify custom Weights
+%! W = [1; 2];
+%! L = loss (model, X_test, Y_test, 'LossFun', 'logit', 'Weights', W);
+
+%!demo
+%! load fisheriris
+%! mdl = fitcknn (meas, species);
+%! X = mean (meas);
+%! Y = {'versicolor'};
+%! m = margin (mdl, X, Y)
+
+%!demo
+%! X = [1, 2; 4, 5; 7, 8; 3, 2];
+%! Y = [2; 1; 3; 2];
+%! ## Train the model
+%! mdl = fitcknn (X, Y);
+%! ## Specify Vars and Labels
+%! Vars = 1;
+%! Labels = 2;
+%! ## Calculate partialDependence
+%! [pd, x, y] = partialDependence (mdl, Vars, Labels);
+
+%!demo
+%! X = [1, 2; 4, 5; 7, 8; 3, 2];
+%! Y = [2; 1; 3; 2];
+%! ## Train the model
+%! mdl = fitcknn (X, Y);
+%! ## Specify Vars and Labels
+%! Vars = 1;
+%! Labels = 1;
+%! queryPoints = [linspace(0, 1, 3)', linspace(0, 1, 3)'];
+%! ## Calculate partialDependence using queryPoints
+%! [pd, x, y] = partialDependence (mdl, Vars, Labels, 'QueryPoints', ...
+%! queryPoints)
 
 ## Test constructor with NSMethod and NumNeighbors parameters
 %!test
@@ -1008,45 +1934,49 @@ endclassdef
 %! ClassificationKNN (ones(4, 1))
 %!error<ClassificationKNN: number of rows in X and Y must be equal.> ...
 %! ClassificationKNN (ones (4,2), ones (1,4))
-%!error<ClassificationKNN: Standardize must be either true or false.> ...
+%!error<ClassificationKNN: 'Standardize' must be either true or false.> ...
 %! ClassificationKNN (ones (5,3), ones (5,1), "standardize", "a")
-%!error<ClassificationKNN: Standardize cannot simultaneously be specified with> ...
+%!error<ClassificationKNN: 'Standardize' cannot simultaneously be specified with> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "scale", [1 1], "standardize", true)
-%!error<ClassificationKNN: PredictorNames must be supplied as a cellstring array.> ...
+%!error<ClassificationKNN: 'PredictorNames' must be supplied as a cellstring array.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "PredictorNames", ["A"])
-%!error<ClassificationKNN: PredictorNames must be supplied as a cellstring array.> ...
+%!error<ClassificationKNN: 'PredictorNames' must be supplied as a cellstring array.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "PredictorNames", "A")
-%!error<ClassificationKNN: PredictorNames must have the same number of columns as X.> ...
+%!error<ClassificationKNN: 'PredictorNames' must have the same number of columns as X.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "PredictorNames", {"A", "B", "C"})
-%!error<ClassificationKNN: ResponseName must be a character array.> ...
+%!error<ClassificationKNN: 'ResponseName' must be a character vector.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "ResponseName", {"Y"})
-%!error<ClassificationKNN: ResponseName must be a character array.> ...
+%!error<ClassificationKNN: 'ResponseName' must be a character vector.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "ResponseName", 1)
-%!error<ClassificationKNN: ClassNames must be a cellstring array.> ...
-%! ClassificationKNN (ones (5,2), ones (5,1), "ClassNames", 1)
-%!error<ClassificationKNN: ClassNames must be a cellstring array.> ...
-%! ClassificationKNN (ones (5,2), ones (5,1), "ClassNames", ["1"])
-%!error<ClassificationKNN: not all ClassNames are present in Y.> ...
-%! ClassificationKNN (ones (5,2), ones (5,1), "ClassNames", {"1", "2"})
-%!error<ClassificationKNN: BreakTies must be a character array.> ...
+%!error<ClassificationKNN: 'ClassNames' must be a cellstring, logical or numeric vector.> ...
+%! ClassificationKNN (ones(10,2), ones (10,1), "ClassNames", @(x)x)
+%!error<ClassificationKNN: 'ClassNames' must be a cellstring, logical or numeric vector.> ...
+%! ClassificationKNN (ones(10,2), ones (10,1), "ClassNames", ['a'])
+%!error<ClassificationKNN: not all 'ClassNames' are present in Y.> ...
+%! ClassificationKNN (ones(10,2), ones (10,1), "ClassNames", [1, 2])
+%!error<ClassificationKNN: not all 'ClassNames' are present in Y.> ...
+%! ClassificationKNN (ones(5,2), {'a';'b';'a';'a';'b'}, "ClassNames", {'a','c'})
+%!error<ClassificationKNN: not all 'ClassNames' are present in Y.> ...
+%! ClassificationKNN (ones(10,2), logical (ones (10,1)), "ClassNames", [true, false])
+%!error<ClassificationKNN: 'BreakTies' must be a character vector.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "BreakTies", 1)
-%!error<ClassificationKNN: BreakTies must be a character array.> ...
+%!error<ClassificationKNN: 'BreakTies' must be a character vector.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "BreakTies", {"1"})
-%!error<ClassificationKNN: invalid value for BreakTies.> ...
+%!error<ClassificationKNN: invalid value for 'BreakTies'.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "BreakTies", "some")
-%!error<ClassificationKNN: Prior must be either a numeric vector or a string.> ...
+%!error<ClassificationKNN: 'Prior' must be either a numeric vector or a character vector.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Prior", {"1", "2"})
-%!error<ClassificationKNN: Cost must be a numeric square matrix.> ...
+%!error<ClassificationKNN: 'Cost' must be a numeric square matrix.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Cost", [1, 2])
-%!error<ClassificationKNN: Cost must be a numeric square matrix.> ...
+%!error<ClassificationKNN: 'Cost' must be a numeric square matrix.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Cost", "string")
-%!error<ClassificationKNN: Cost must be a numeric square matrix.> ...
+%!error<ClassificationKNN: 'Cost' must be a numeric square matrix.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Cost", {eye(2)})
-%!error<ClassificationKNN: NumNeighbors must be a positive integer.> ...
+%!error<ClassificationKNN: 'NumNeighbors' must be a positive integer.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "NumNeighbors", 0)
-%!error<ClassificationKNN: NumNeighbors must be a positive integer.> ...
+%!error<ClassificationKNN: 'NumNeighbors' must be a positive integer.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "NumNeighbors", 15.2)
-%!error<ClassificationKNN: NumNeighbors must be a positive integer.> ...
+%!error<ClassificationKNN: 'NumNeighbors' must be a positive integer.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "NumNeighbors", "asd")
 %!error<ClassificationKNN: unsupported distance metric.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Distance", "somemetric")
@@ -1068,39 +1998,39 @@ endclassdef
 %! ClassificationKNN (ones (5,2), ones (5,1), "DistanceWeight", "text")
 %!error<ClassificationKNN: invalid distance weight.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "DistanceWeight", [1 2 3])
-%!error<ClassificationKNN: Scale must be a numeric vector.> ...
+%!error<ClassificationKNN: 'Scale' must be a numeric vector.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Scale", "scale")
-%!error<ClassificationKNN: Scale must be a numeric vector.> ...
+%!error<ClassificationKNN: 'Scale' must be a numeric vector.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Scale", {[1 2 3]})
-%!error<ClassificationKNN: Scale cannot simultaneously be specified with> ...
+%!error<ClassificationKNN: 'Scale' cannot simultaneously be specified with> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "standardize", true, "scale", [1 1])
-%!error<ClassificationKNN: Cov must be a symmetric positive definite matrix.> ...
+%!error<ClassificationKNN: 'Cov' must be a symmetric positive definite matrix.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Cov", ones (2), "Distance", "mahalanobis")
-%!error<ClassificationKNN: Cov cannot simultaneously be specified with> ...
+%!error<ClassificationKNN: 'Cov' cannot simultaneously be specified with> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "scale", [1 1], "Cov", ones (2))
-%!error<ClassificationKNN: Exponent must be a positive integer.> ...
+%!error<ClassificationKNN: 'Exponent' must be a positive integer.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Exponent", 12.5)
-%!error<ClassificationKNN: Exponent must be a positive integer.> ...
+%!error<ClassificationKNN: 'Exponent' must be a positive integer.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Exponent", -3)
-%!error<ClassificationKNN: Exponent must be a positive integer.> ...
+%!error<ClassificationKNN: 'Exponent' must be a positive integer.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Exponent", "three")
-%!error<ClassificationKNN: Exponent must be a positive integer.> ...
+%!error<ClassificationKNN: 'Exponent' must be a positive integer.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Exponent", {3})
-%!error<ClassificationKNN: NSMethod must be a character array.> ...
+%!error<ClassificationKNN: 'NSMethod' must be a character vector.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "NSMethod", {"kdtree"})
-%!error<ClassificationKNN: NSMethod must be a character array.> ...
+%!error<ClassificationKNN: 'NSMethod' must be a character vector.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "NSMethod", 3)
-%!error<ClassificationKNN: NSMethod must be either kdtree or exhaustive.> ...
+%!error<ClassificationKNN: 'NSMethod' must be either 'kdtree' or 'exhaustive'.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "NSMethod", "some")
-%!error<ClassificationKNN: IncludeTies must be either true or false.> ...
+%!error<ClassificationKNN: 'IncludeTies' must be either true or false.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "IncludeTies", "some")
-%!error<ClassificationKNN: BucketSize must be a positive integer.> ...
+%!error<ClassificationKNN: 'BucketSize' must be a positive integer.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "BucketSize", 42.5)
-%!error<ClassificationKNN: BucketSize must be a positive integer.> ...
+%!error<ClassificationKNN: 'BucketSize' must be a positive integer.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "BucketSize", -50)
-%!error<ClassificationKNN: BucketSize must be a positive integer.> ...
+%!error<ClassificationKNN: 'BucketSize' must be a positive integer.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "BucketSize", "some")
-%!error<ClassificationKNN: BucketSize must be a positive integer.> ...
+%!error<ClassificationKNN: 'BucketSize' must be a positive integer.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "BucketSize", {50})
 %!error<ClassificationKNN: invalid parameter name in optional pair arguments.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "some", "some")
@@ -1108,23 +2038,23 @@ endclassdef
 %! ClassificationKNN ([1;2;3;'a';4], ones (5,1))
 %!error<ClassificationKNN: invalid values in X.> ...
 %! ClassificationKNN ([1;2;3;Inf;4], ones (5,1))
-%!error<ClassificationKNN: the elements in Prior do not correspond to selected> ...
+%!error<ClassificationKNN: the elements in 'Prior' do not correspond to selected classes in Y.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Prior", [1 2])
-%!error<ClassificationKNN: the number of rows and columns in Cost must> ...
+%!error<ClassificationKNN: the number of rows and columns in 'Cost' must correspond to selected classes in Y.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Cost", [1 2; 1 3])
-%!error<ClassificationKNN: Scale is only valid when distance metric is seuclidean> ...
+%!error<ClassificationKNN: 'Scale' is only valid when distance metric is seuclidean.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Scale", [1 1])
-%!error<ClassificationKNN: Scale vector must have equal length to the number of> ...
+%!error<ClassificationKNN: 'Scale' vector must have equal length to the number of columns in X.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Scale", [1 1 1], "Distance", "seuclidean")
-%!error<ClassificationKNN: Scale vector must contain nonnegative scalar values.> ...
+%!error<ClassificationKNN: 'Scale' vector must contain nonnegative scalar values.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Scale", [1 -1], "Distance", "seuclidean")
-%!error<ClassificationKNN: Cov is only valid when distance metric is mahalanobis> ...
+%!error<ClassificationKNN: 'Cov' is only valid when distance metric is 'mahalanobis'.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Cov", eye (2))
-%!error<ClassificationKNN: Cov matrix must have equal columns as X.> ...
+%!error<ClassificationKNN: 'Cov' matrix must have equal columns as X.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Cov", eye (3), "Distance", "mahalanobis")
-%!error<ClassificationKNN: Exponent is only valid when distance metric is minkowski.> ...
+%!error<ClassificationKNN: 'Exponent' is only valid when distance metric is 'minkowski'.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Exponent", 3)
-%!error<ClassificationKNN: kdtree method is only valid for euclidean, cityblock> ...
+%!error<ClassificationKNN: 'kdtree' method is only valid for 'euclidean', 'cityblock', 'manhattan', 'minkowski', and 'chebychev' distance metrics.> ...
 %! ClassificationKNN (ones (5,2), ones (5,1), "Distance", "hamming", "NSMethod", "kdtree")
 
 ## Test output for predict method
@@ -1160,7 +2090,7 @@ endclassdef
 %! assert (s, [1, 0, 0; 0, 1, 0; 0, 0.3, 0.7], 1e-4)
 %! assert (c, [0, 1, 1; 1, 0, 1; 1, 0.7, 0.3], 1e-4)
 %!test
-%! xc = [5.2, 4.1, 1.5,	0.1; 5.1,	3.8, 1.9,	0.4; ...
+%! xc = [5.2, 4.1, 1.5, 0.1; 5.1, 3.8, 1.9, 0.4; ...
 %!         5.1, 3.8, 1.5, 0.3; 4.9, 3.6, 1.4, 0.1];
 %! obj = fitcknn (x, y, "NumNeighbors", 5);
 %! [l, s, c] = predict (obj, xc);
@@ -1280,3 +2210,389 @@ endclassdef
 %! predict (ClassificationKNN (ones (4,2), ones (4,1)), [])
 %!error<ClassificationKNN.predict: XC must have the same number of features> ...
 %! predict (ClassificationKNN (ones (4,2), ones (4,1)), 1)
+
+## Test output for loss method
+%!test
+%! load fisheriris
+%! model = fitcknn (meas, species, 'NumNeighbors', 5);
+%! X = mean (meas);
+%! Y = {'versicolor'};
+%! L = loss (model, X, Y);
+%! assert (L, 0)
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = {'A'; 'B'; 'A'};
+%! model = fitcknn (X, Y);
+%! X_test = [1, 6; 3, 3];
+%! Y_test = {'A'; 'B'};
+%! L = loss (model, X_test, Y_test);
+%! assert (abs (L - 0.6667) > 1e-5)
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = {'A'; 'B'; 'A'};
+%! model = fitcknn (X, Y);
+%! X_with_nan = [1, 2; NaN, 4];
+%! Y_test = {'A'; 'B'};
+%! L = loss (model, X_with_nan, Y_test);
+%! assert (abs (L - 0.3333) < 1e-4)
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = {'A'; 'B'; 'A'};
+%! model = fitcknn (X, Y);
+%! X_with_nan = [1, 2; NaN, 4];
+%! Y_test = {'A'; 'B'};
+%! L = loss (model, X_with_nan, Y_test, 'LossFun', 'logit');
+%! assert (isnan (L))
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = {'A'; 'B'; 'A'};
+%! model = fitcknn (X, Y);
+%! customLossFun = @(C, S, W, Cost) sum (W .* sum (abs (C - S), 2));
+%! L = loss (model, X, Y, 'LossFun', customLossFun);
+%! assert (L, 0)
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = [1; 2; 1];
+%! model = fitcknn (X, Y);
+%! L = loss (model, X, Y, 'LossFun', 'classiferror');
+%! assert (L, 0)
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = [true; false; true];
+%! model = fitcknn (X, Y);
+%! L = loss (model, X, Y, 'LossFun', 'binodeviance');
+%! assert (abs (L - 0.1269) < 1e-4)
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = ['1'; '2'; '1'];
+%! model = fitcknn (X, Y);
+%! L = loss (model, X, Y, 'LossFun', 'classiferror');
+%! assert (L, 0)
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = ['1'; '2'; '3'];
+%! model = fitcknn (X, Y);
+%! X_test = [3, 3];
+%! Y_test = ['1'];
+%! L = loss (model, X_test, Y_test, 'LossFun', 'quadratic');
+%! assert (L, 1)
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = ['1'; '2'; '3'];
+%! model = fitcknn (X, Y);
+%! X_test = [3, 3; 5, 7];
+%! Y_test = ['1'; '2'];
+%! L = loss (model, X_test, Y_test, 'LossFun', 'classifcost');
+%! assert (L, 1)
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = ['1'; '2'; '3'];
+%! model = fitcknn (X, Y);
+%! X_test = [3, 3; 5, 7];
+%! Y_test = ['1'; '2'];
+%! L = loss (model, X_test, Y_test, 'LossFun', 'hinge');
+%! assert (L, 1)
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = ['1'; '2'; '3'];
+%! model = fitcknn (X, Y);
+%! X_test = [3, 3; 5, 7];
+%! Y_test = ['1'; '2'];
+%! W = [1; 2];
+%! L = loss (model, X_test, Y_test, 'LossFun', 'logit', 'Weights', W);
+%! assert (abs (L - 0.6931) < 1e-4)
+
+## Test input validation for loss method
+%!error<ClassificationKNN.loss: too few input arguments.> ...
+%! loss (ClassificationKNN (ones (4,2), ones (4,1)))
+%!error<ClassificationKNN.loss: too few input arguments.> ...
+%! loss (ClassificationKNN (ones (4,2), ones (4,1)), ones (4,2))
+%!error<ClassificationKNN.loss: name-value arguments must be in pairs.> ...
+%! loss (ClassificationKNN (ones (4,2), ones (4,1)), ones (4,2), ...
+%!        ones (4,1), 'LossFun')
+%!error<ClassificationKNN.loss: Y must have the same number of rows as X.> ...
+%! loss (ClassificationKNN (ones (4,2), ones (4,1)), ones (4,2), ones (3,1))
+%!error<ClassificationKNN.loss: invalid loss function.> ...
+%! loss (ClassificationKNN (ones (4,2), ones (4,1)), ones (4,2), ...
+%!        ones (4,1), 'LossFun', 'a')
+%!error<ClassificationKNN.loss: invalid Weights.> ...
+%! loss (ClassificationKNN (ones (4,2), ones (4,1)), ones (4,2), ...
+%!        ones (4,1), 'Weights', 'w')
+
+## Test output for margin method
+%!test
+%! load fisheriris
+%! mdl = fitcknn (meas, species, 'NumNeighbors', 5);
+%! X = mean (meas);
+%! Y = {'versicolor'};
+%! m = margin (mdl, X, Y);
+%! assert (m, 1)
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = [1; 2; 3];
+%! mdl = fitcknn (X, Y);
+%! m = margin (mdl, X, Y);
+%! assert (m, [1; 1; 1])
+%!test
+%! X = [7, 8; 9, 10];
+%! Y = ['1'; '2'];
+%! mdl = fitcknn (X, Y);
+%! m = margin (mdl, X, Y);
+%! assert (m, [1; 1])
+%!test
+%! X = [11, 12];
+%! Y = {'1'};
+%! mdl = fitcknn (X, Y);
+%! m = margin (mdl, X, Y);
+%! assert (isnan (m))
+%!test
+%! X = [1, 2; 3, 4; 5, 6];
+%! Y = [1; 2; 3];
+%! mdl = fitcknn (X, Y);
+%! X1 = [15, 16];
+%! Y1 = [1];
+%! m = margin (mdl, X1, Y1);
+%! assert (m, -1)
+
+## Test input validation for margin method
+%!error<ClassificationKNN.margin: too few input arguments.> ...
+%! margin (ClassificationKNN (ones (4,2), ones (4,1)))
+%!error<ClassificationKNN.margin: too few input arguments.> ...
+%! margin (ClassificationKNN (ones (4,2), ones (4,1)), ones (4,2))
+%!error<ClassificationKNN.margin: Y must have the same number of rows as X.> ...
+%! margin (ClassificationKNN (ones (4,2), ones (4,1)), ones (4,2), ones (3,1))
+
+## Test output for partialDependence
+%!shared X, Y, mdl
+%! X = [1, 2; 4, 5; 7, 8; 3, 2];
+%! Y = [2; 1; 3; 2];
+%! mdl = fitcknn (X, Y);
+%!test
+%! Vars = 1;
+%! Labels = 2;
+%! [pd, x, y] = partialDependence (mdl, Vars, Labels);
+%! pdm = [0.7500, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000];
+%! assert (pd, pdm)
+%!test
+%! Vars = 1;
+%! Labels = 2;
+%! [pd, x, y] = partialDependence (mdl, Vars, Labels, ...
+%! 'NumObservationsToSample', 5);
+%! pdm = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...
+%! 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...
+%! 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...
+%! 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...
+%! 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+%! assert (abs (pdm - pd) < 1)
+%!test
+%! Vars = 1;
+%! Labels = 2;
+%! [pd, x, y] = partialDependence (mdl, Vars, Labels, 'UseParallel', true);
+%! pdm = [0.7500, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000];
+%! assert (pd, pdm)
+%!test
+%! Vars = [1, 2];
+%! Labels = 1;
+%! queryPoints = {linspace(0, 1, 3)', linspace(0, 1, 3)'};
+%! [pd, x, y] = partialDependence (mdl, Vars, Labels, 'QueryPoints', ...
+%!                            queryPoints, 'UseParallel', true);
+%! pdm = [0, 0, 0; 0, 0, 0; 0, 0, 0];
+%! assert (pd, pdm)
+%!test
+%! Vars = 1;
+%! Labels = [1; 2];
+%! [pd, x, y] = partialDependence (mdl, Vars, Labels);
+%! pdm = [0.2500, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.2500, 0.2500, 0.2500, ...
+%! 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, ...
+%! 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, ...
+%! 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, ...
+%! 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, ...
+%! 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, 0.2500, ...
+%! 0.2500, 0.2500; 0.7500, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, 0.5000, ...
+%! 0.5000, 0.5000, 0.5000];
+%! assert (pd, pdm)
+%!test
+%! Vars = [1, 2];
+%! Labels = [1; 2];
+%! queryPoints = {linspace(0, 1, 3)', linspace(0, 1, 3)'};
+%! [pd, x, y] = partialDependence (mdl, Vars, Labels, 'QueryPoints', queryPoints);
+%! pdm(:,:,1) = [0, 0, 0; 1, 1, 1];
+%! pdm(:,:,2) = [0, 0, 0; 1, 1, 1];
+%! pdm(:,:,3) = [0, 0, 0; 1, 1, 1];
+%! assert (pd, pdm)
+%!test
+%! X1 = [1; 2; 4; 5; 7; 8; 3; 2];
+%! X2 = ['2'; '3'; '1'; '3'; '1'; '3'; '2'; '2'];
+%! X = [X1, double(X2)];
+%! Y = [1; 2; 3; 3; 2; 1; 2; 1];
+%! mdl = fitcknn (X, Y, 'ClassNames', {'1', '2', '3'});
+%! Vars = 1;
+%! Labels = 1;
+%! [pd, x, y] = partialDependence (mdl, Vars, Labels);
+%! pdm = [1.0000, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, ...
+%! 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, ...
+%! 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...
+%! 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...
+%! 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.3750, ...
+%! 0.3750, 0.3750, 0.3750, 0.3750, 0.3750, 0.3750, 0.3750, 0.3750, 0.3750, ...
+%! 0.3750, 0.3750, 0.3750, 0.3750, 0.7500, 0.7500, 0.7500, 0.7500, 0.7500, ...
+%! 0.7500, 0.7500, 0.7500];
+%! assert (pd, pdm)
+%!test
+%! X1 = [1; 2; 4; 5; 7; 8; 3; 2];
+%! X2 = ['2'; '3'; '1'; '3'; '1'; '3'; '2'; '2'];
+%! X = [X1, double(X2)];
+%! Y = [1; 2; 3; 3; 2; 1; 2; 1];
+%! predictorNames = {'Feature1', 'Feature2'};
+%! mdl = fitcknn (X, Y, 'PredictorNames', predictorNames);
+%! Vars = 'Feature1';
+%! Labels = 1;
+%! [pd, x, y] = partialDependence (mdl, Vars, Labels);
+%! pdm = [1.0000, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, ...
+%! 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, ...
+%! 0.6250, 0.6250, 0.6250, 0.6250, 0.6250, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...
+%! 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...
+%! 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.3750, ...
+%! 0.3750, 0.3750, 0.3750, 0.3750, 0.3750, 0.3750, 0.3750, 0.3750, 0.3750, ...
+%! 0.3750, 0.3750, 0.3750, 0.3750, 0.7500, 0.7500, 0.7500, 0.7500, 0.7500, ...
+%! 0.7500, 0.7500, 0.7500];
+%! assert (pd, pdm)
+%!test
+%! X1 = [1; 2; 4; 5; 7; 8; 3; 2];
+%! X2 = ['2'; '3'; '1'; '3'; '1'; '3'; '2'; '2'];
+%! X = [X1, double(X2)];
+%! Y = [1; 2; 3; 3; 2; 1; 2; 1];
+%! predictorNames = {'Feature1', 'Feature2'};
+%! mdl = fitcknn (X, Y, 'PredictorNames', predictorNames);
+%! new_X1 = [10; 5; 6; 8; 9; 20; 35; 6];
+%! new_X2 = ['2'; '2'; '1'; '2'; '1'; '3'; '3'; '2'];
+%! new_X = [new_X1, double(new_X2)];
+%! Vars = 'Feature1';
+%! Labels = 1;
+%! [pd, x, y] = partialDependence (mdl, Vars, Labels, new_X);
+%! pdm = [0, 0, 0, 0, 0, 0.2500, 0.2500, 0.2500, 0.2500, 0.7500, 0.7500, ...
+%! 0.7500, 0.7500, 0.7500, 0.7500, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, ...
+%! 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, ...
+%! 1.0000, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ...
+%! 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ...
+%! 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+%! assert (pd, pdm)
+
+## Test input validation for partialDependence method
+%!error<ClassificationKNN.partialDependence: too few input arguments.> ...
+%! partialDependence (ClassificationKNN (ones (4,2), ones (4,1)))
+%!error<ClassificationKNN.partialDependence: too few input arguments.> ...
+%! partialDependence (ClassificationKNN (ones (4,2), ones (4,1)), 1)
+%!error<ClassificationKNN.partialDependence: name-value arguments must be in pairs.> ...
+%! partialDependence (ClassificationKNN (ones (4,2), ones (4,1)), 1, ...
+%!          ones (4,1), 'NumObservationsToSample')
+%!error<ClassificationKNN.partialDependence: name-value arguments must be in pairs.> ...
+%! partialDependence (ClassificationKNN (ones (4,2), ones (4,1)), 1, ...
+%!          ones (4,1), 2)
+
+## Test output for crossval method
+%!shared x, y, obj
+%! load fisheriris
+%! x = meas;
+%! y = species;
+%! covMatrix = cov (x);
+%! obj = fitcknn (x, y, 'NumNeighbors', 5, 'Distance', ...
+%!      'mahalanobis', 'Cov', covMatrix);
+%!test
+%! CVMdl = crossval (obj);
+%! assert (class (CVMdl), "ClassificationPartitionedModel")
+%! assert ({CVMdl.X, CVMdl.Y}, {x, y})
+%! assert (CVMdl.KFold == 10)
+%! assert (CVMdl.ModelParameters.NumNeighbors == 5)
+%! assert (strcmp (CVMdl.ModelParameters.Distance, "mahalanobis"))
+%! assert (class (CVMdl.Trained{1}), "ClassificationKNN")
+%! assert (!CVMdl.ModelParameters.Standardize)
+%!test
+%! CVMdl = crossval (obj, "KFold", 5);
+%! assert (class (CVMdl), "ClassificationPartitionedModel")
+%! assert ({CVMdl.X, CVMdl.Y}, {x, y})
+%! assert (CVMdl.KFold == 5)
+%! assert (CVMdl.ModelParameters.NumNeighbors == 5)
+%! assert (strcmp (CVMdl.ModelParameters.Distance, "mahalanobis"))
+%! assert (class (CVMdl.Trained{1}), "ClassificationKNN")
+%! assert (CVMdl.ModelParameters.Standardize == obj.Standardize)
+%!test
+%! obj = fitcknn (x, y, "NumNeighbors", 5, "Distance", "cityblock");
+%! CVMdl = crossval (obj, "HoldOut", 0.2);
+%! assert (class (CVMdl), "ClassificationPartitionedModel")
+%! assert ({CVMdl.X, CVMdl.Y}, {x, y})
+%! assert (CVMdl.ModelParameters.NumNeighbors == 5)
+%! assert (strcmp (CVMdl.ModelParameters.Distance, "cityblock"))
+%! assert (class (CVMdl.Trained{1}), "ClassificationKNN")
+%! assert (CVMdl.ModelParameters.Standardize == obj.Standardize)
+%!test
+%! obj = fitcknn (x, y, "NumNeighbors", 10, "Distance", "cityblock");
+%! CVMdl = crossval (obj, "LeaveOut", 'on');
+%! assert (class (CVMdl), "ClassificationPartitionedModel")
+%! assert ({CVMdl.X, CVMdl.Y}, {x, y})
+%! assert (CVMdl.ModelParameters.NumNeighbors == 10)
+%! assert (strcmp (CVMdl.ModelParameters.Distance, "cityblock"))
+%! assert (class (CVMdl.Trained{1}), "ClassificationKNN")
+%! assert (CVMdl.ModelParameters.Standardize == obj.Standardize)
+%!test
+%! obj = fitcknn (x, y, "NumNeighbors", 10, "Distance", "cityblock");
+%! partition = cvpartition (size (x, 1), 'KFold', 3);
+%! CVMdl = crossval (obj, 'cvPartition', partition);
+%! assert (class (CVMdl), "ClassificationPartitionedModel")
+%! assert (CVMdl.KFold == 3)
+%! assert (CVMdl.ModelParameters.NumNeighbors == 10)
+%! assert (strcmp (CVMdl.ModelParameters.Distance, "cityblock"))
+%! assert (class (CVMdl.Trained{1}), "ClassificationKNN")
+%! assert (CVMdl.ModelParameters.Standardize == obj.Standardize)
+
+## Test input validation for crossval method
+%!error<ClassificationKNN.crossval: Name-Value arguments must be in pairs.> ...
+%! crossval (ClassificationKNN (ones (4,2), ones (4,1)), "kfold")
+%!error<ClassificationKNN.crossval: specify only one of the optional Name-Value paired arguments.>...
+%! crossval (ClassificationKNN (ones (4,2), ones (4,1)), "kfold", 12, "holdout", 0.2)
+%!error<ClassificationKNN.crossval: 'KFold' must be an integer value greater than 1.> ...
+%! crossval (ClassificationKNN (ones (4,2), ones (4,1)), "kfold", 'a')
+%!error<ClassificationKNN.crossval: 'Holdout' must be a numeric value between 0 and 1.> ...
+%! crossval (ClassificationKNN (ones (4,2), ones (4,1)), "holdout", 2)
+%!error<ClassificationKNN.crossval: 'Leaveout' must be either 'on' or 'off'.> ...
+%! crossval (ClassificationKNN (ones (4,2), ones (4,1)), "leaveout", 1)
+%!error<ClassificationKNN.crossval: 'CVPartition' must be a 'cvpartition' object.> ...
+%! crossval (ClassificationKNN (ones (4,2), ones (4,1)), "cvpartition", 1)
+
