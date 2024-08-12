@@ -1,7 +1,5 @@
 ## Copyright (C) 2024 Yassin Achengli <0619883460@uma.es>
 ##
-## This file is part of algorithm package for GNU Octave.
-## 
 ## This file is part of the statistics package for GNU Octave.
 ##
 ## This program is free software; you can redistribute it and/or modify it under
@@ -18,7 +16,7 @@
 ## this program; if not, see <http://www.gnu.org/licenses/>.
 
 ## -*- texinfo -*-
-## @deftypefn {algorithm} {[@var{beta}, @var{tolerance}] =} irls(@var{X}, @var{y}, @var{N}, ...)
+## @deftypefn {statistics} {[@var{beta}, @var{tolerance}] =} irls (@var{X}, @var{y}, @var{N}, @dots{})
 ## 
 ## Iteratively Reweighted Least Squares method.
 ##
@@ -31,11 +29,66 @@
 ## \end{equation}
 ## @end tex
 ## 
-## X
-function [beta, tolerance] = irls(X, y, N, varargin)
+## The algorithm optimizes 
+## 
+## @example
+## @group
+## | yi - fi(beta) |^p |
+## @end group
+## @end example
+##
+## The p-norm of the error of yi estimated using a function of beta weights. This function
+## takes linear functions of beta provided by a matrix of input variables @var{X}.
+## 
+## PARAMETERS:
+## 
+## @itemize
+## @item
+## var{X}
+## categorical variables samples
+## @item 
+## @var{y}
+## estimations
+## @item 
+## @var{N}
+## number of iterations. Must be 1 or greater
+## @end itemize
+##
+## OPTIONAL PARAMETERS:
+##
+## @itemize
+## @item 
+## @var{beta_0}
+## seed values for beta output (first iteration) {nx1 matrix} (zeros by default)
+## @item 
+## @var{w_0}
+## seed values for weight inter-iteration vector {nx1 matrix} (ones by default)
+## @item 
+## @var{normscale}
+## level of normalization (2 by default)
+## @item 
+## @var{gamma}
+## in order to avoid dividing by zero if @var{normscale} < 2 (default 1e-6)
+## @end itemize
+## 
+## OUTPUT:
+##
+## @itemize
+## @item 
+## @var{beta}
+## optimized weights
+## @item 
+## @{tolerance}
+## mean of absolute value of the divergence between the last beta and 
+## the previous one
+## @end itemize
+## 
+## @seealso{glmfit,fsolve}
+## @end deftypefn
+
+function [beta, tolerance, Niter] = irls(X, y, N, varargin)
   if (nargin < 3)
-    fprintf("You need to explicitly give almost 3 arguments: X, y and N\n")
-    print_usage
+    error("You need to explicitly give almost 3 arguments: X, y and N\n")
   endif
 
   if (size(X,1) ~= size(y,1))
@@ -48,33 +101,40 @@ function [beta, tolerance] = irls(X, y, N, varargin)
   endif
 
   params = inputParser();
-  params.addOptional('beta_0', zeros(size(y)),
+  params.addParameter('B0', zeros(size(y)),
   @(x) isvector(x) && size(x) == size(y));
-  params.addOptional('w_0', diag(ones(size(y))),
+  params.addParameter('weights', diag(ones(size(y))),
   @(x) isdiag(x) && size(diag(x)) == size(y));
-  params.addOptional('normscale', 2, @(x) isinteger(x) && x >= 0);
-  params.addOptional('gamma', 1e-6, @isfloat);
+  params.addParameter('normscale', 2, @(x) isinteger(x) && x >= 0);
+  params.addParameter('gamma', 1e-6, @isfloat);
+  params.addParameter('tolerance', 1e-6, @isfloat);
   params.parse(varargin{:});
   
-  beta = params.Results.beta_0;
-  w = params.Results.w_0;
+  beta = params.Results.B0;
+  w = params.Results.weights;
   p = params.Results.normscale;
   gamma = params.Results.gamma;
-  beta_next = params.Results.beta_0;
+  beta_next = params.Results.B0;
 
+  Niter = N;
   for iter = 1:N
     beta_next = inv(X'*w*X)*X'*w*y;
-    if (iter == N)
-      tolerance = mean(abs(beta_next - beta));
-    endif
+    tolerance = mean(abs(beta_next - beta));
     beta = beta_next;
+
     if (p < 2) % in order to avoid dividing by zero
       w = diag(1./max(abs(y - X*beta).^(-(p-2)), gamma));
     else
       w = diag(abs(y - X*beta).^(p-2));
     endif
+
+    if (tolerance <= params.Results.tolerance)
+      Niter = iter;
+      break
+    endif
   endfor
 endfunction
+## demonstrations
 %!demo
 %! X = randn(10,9);
 %! y = rand(10,1);
@@ -84,3 +144,9 @@ endfunction
 %! tolerance_teo = mean(abs(y - X*beta))
 %! disp("tolerance obtained with the algorithm:")
 %! tolerance
+## test
+%!test
+%! X = rand(10,9);
+%! y = rand(10,1);
+%! [beta, tol] = irls(X,y);
+%! assert(size(beta), size(y));
