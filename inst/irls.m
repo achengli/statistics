@@ -101,22 +101,23 @@ function [beta, tolerance, Niter] = irls(X, y, N, varargin)
   endif
 
   params = inputParser();
-  params.addParameter('B0', zeros(size(y)),
-  @(x) isvector(x) && size(x) == size(y));
-  params.addParameter('weights', diag(ones(size(y))),
-  @(x) isdiag(x) && size(diag(x)) == size(y));
+
+  params.addParameter('B0', zeros(size(X,2),1), @isvector);
+
+  params.addParameter('weights', ones(size(y)), @(x) size(x) == size(y));
+
   params.addParameter('normscale', 2, @(x) isinteger(x) && x >= 0);
   params.addParameter('gamma', 1e-6, @isfloat);
   params.addParameter('tolerance', 1e-6, @isfloat);
   params.parse(varargin{:});
   
   beta = params.Results.B0;
-  w = params.Results.weights;
+  w = diag(params.Results.weights);
   p = params.Results.normscale;
   gamma = params.Results.gamma;
   beta_next = params.Results.B0;
-
   Niter = N;
+
   for iter = 1:N
     beta_next = inv(X'*w*X)*X'*w*y;
     tolerance = mean(abs(beta_next - beta));

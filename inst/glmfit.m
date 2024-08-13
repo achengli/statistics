@@ -66,7 +66,7 @@
 ## Link Function, Derivative Function, Inverse Function.
 ## @end deftypefn
 
-function [b, varargout] = glmfit (X, y, distribution, varargin)
+function [b, dev, stats] = glmfit (X, y, distribution, varargin)
 
   ## Check input
   if (nargin < 3)
@@ -98,48 +98,65 @@ function [b, varargout] = glmfit (X, y, distribution, varargin)
   if (strncmp (distribution, 'binomial', 5) && ny > 2)
     error (["glmfit: for a binomial distribution,", ...
       " Y must be an n-by-1 or n-by-2 matrix."]);
-  elseif (n != 1)
+  elseif (!(strncmp(distribution, 'binomial', 5))&& ny != 1)
     error (["glmfit: for distributions other than the binomial,", ...
       " Y must be an n-by-1 column vector."]);
   endif
    
-  IDENTITY_LINK = struct('link', @(t) t, 'derivative', @(t) 1, 'inverse', @(t) t);
-  LOG_LINK = struct('link', @(t) log(t), 'derivative', @(t) 1/abs(t), ...
-  'inverse', @(t) exp(t));
-  LOGIT_LINK = struct('link', @(t) log(t./(1-t)), 'derivative', @(t) -1./(t^2-t),...
-  'inverse', @(t) exp(t)./(1 + exp(t)));
-  PROBIT_LINK = struct('link', @(t) probit(t), 'derivative', @(t), -sqrt(2^5)...
-  *exp(4*t.^2)/sqrt(pi), 'inverse', @(t) erfc(-t/sqrt(2))/2);
-  LOGLOG_LINK = struct('link', @(t) log(-log(t)), 'derivative', @(t) 1./(t.*log(t)),...
-  'inverse', @(t) exp(-exp(t)));
-  COMPLOGLOG_LINK = struct('link', @(t) log(-log(1-t)), 'derivative', -1/(log(1-t).*(1-t)),
-  'inverse', 1 - exp(-exp(t)));
-  RECIPROCAL_LINK = struct('link', @(t) 1./t, 'derivative', @(t) -1./(t.^2), 'inverse',...
-  @(t) 1./t);
-  P_LINK = struct('link', @(t, p) t.^p, 'derivative', @(t, p) p*t.^(p-1), 'inverse', ...
-  @(t, p) t.^(1/p));
+  IDENTITY_LINK = struct('link', @(t) t,
+                          'derivative', @(t) 1, 
+                          'inverse', @(t) t);
+  
+  LOG_LINK = struct('link', @(t) log(t),
+                    'derivative', @(t) 1/abs(t),
+                    'inverse', @(t) exp(t));
+
+  LOGIT_LINK = struct('link', @(t) log(t./(1-t)),
+                      'derivative', @(t) -1./(t^2-t),
+                      'inverse', @(t) exp(t)./(1 + exp(t)));
+
+  PROBIT_LINK = struct('link', @(t) probit(t), 
+                       'derivative', @(t) -sqrt(2^5)*exp(4*t.^2)/sqrt(pi), 
+                       'inverse', @(t) erfc(-t/sqrt(2))/2);
+
+  LOGLOG_LINK = struct('link', @(t) log(-log(t)),
+                       'derivative', @(t) 1./(t.*log(t)),
+                       'inverse', @(t) exp(-exp(t)));
+
+  COMPLOGLOG_LINK = struct('link', @(t) log(-log(1-t)),
+                           'derivative',@(t) -1./(log(1-t).*(1-t)), 
+                           'inverse',@(t) 1 - exp(-exp(t)));
+
+  RECIPROCAL_LINK = struct('link', @(t) 1./t, 
+                           'derivative', @(t) -1./(t.^2),
+                           'inverse', @(t) 1./t);
+
+  P_LINK = struct('link', @(t, p) t.^p,
+                  'derivative', @(t, p) p*t.^(p-1),
+                  'inverse', @(t, p) t.^(1/p));
 
   DEFAULT_OPTIONS = struct('display', 'off', 'maxiter', 100, 'tolx', 1e-6);
 
-  if (strcmp(distribution, 'poisson'))
+  switch (tolower(distribution))
+  case "poisson"
     DEFAULT_LINK = LOG_LINK;
-  elseif (strcmp(distribution, 'binomial'))
+  case "binomial"
     DEFAULT_LINK = LOGIT_LINK;
-    y = min(y(:,1) ./ y(:,2), y(:,2) ./ y(:,1));
-  elseif (strcmp(distribution, 'gamma'))
+    p = min(y(:,1) ./ y(:,2), y(:,2) ./ y(:,1));
+  case "gamma"
     DEFAULT_LINK = RECIPROCAL_LINK;
-  elseif (strcmp(distribution, 'inverse gaussian'))
+  case "inverse gaussian"
     DEFAULT_LINK = P_LINK;
-  else
+  otherwise
     DEFAULT_LINK = IDENTITY_LINK;
-  endif
+  endswitch
 
   ## parsing named arguments
   parser = inputParser();
-  parser.addParameter('link', DEFAULT_LINK, @isstruct);
+  parser.addParameter('link', DEFAULT_LINK, @(x) isstruct(x) || ischar(x));
   parser.addParameter('constant', 'on', @(x) sum(strcmp(x,{'on','off'})));
 
-  if (strncmp(distribution, 'binomial') || strcmp(distribution, 'poisson'))
+  if (strcmp(distribution, 'binomial') || strcmp(distribution, 'poisson'))
     parser.addParameter('estimdisp', 'off', @(x) sum(strcmp(x,{'on','off'})));
   else
     parser.addParameter('estimdisp', 'on', @(x) sum(strcmp(x,{'on','off'})));
@@ -149,7 +166,7 @@ function [b, varargout] = glmfit (X, y, distribution, varargin)
   parser.addParameter('offset', [], @(x) (isnumeric(x)));
   parser.addParameter('options', DEFAULT_OPTIONS, @isstruct);
   parser.addParameter('weights', ones(mx, 1), @isnumeric);
-  parser.addParameter('B0', zeros(mx, 1), @isnumeric);
+  parser.addParameter('B0', zeros(nx, 1), @isnumeric);
 
   parser.parse(varargin{:});
   results = parser.Results;
@@ -161,37 +178,45 @@ function [b, varargout] = glmfit (X, y, distribution, varargin)
     X = [ones(mx,1), X];
   endif
 
-  w = results.weights;
+  if (size(results.weights) != [my, 1])
+    w = ones(my, 1);
+  else
+    w = results.weights;
+  endif
 
   N = 100;
   if (results.options.maxiter > 0)
     N = results.options.maxiter;
   endif
 
-  if (ischar(link))
-    if (strcmp(link, 'identity'))
-      link = IDENTITY_LINK;
-    elseif (strcmp(link, 'log'))
-      link = LOG_LINK;
-    elseif (strcmp(link, 'logit'))
-      link = LOGIT_LINK;
-    elseif (strcmp(link, 'probit'))
-      link = PROBIT_LINK;
-    elseif (strcmp(link, 'loglog'))
-      link = LOGLOG_LINK;
-    elseif (strcmp(link, 'comploglog'))
-      link = COMPLOGLOG_LINK;
-    elseif (strcmp(link, 'reciprocal'))
-      link = RECIPROCAL_LINK;
-    elseif (strncmp(link, 'p_function'))
-      link = P_LINK;
-    else
-      error(strcat('<',link,'> link function not yet supported')
-    endif
-  elseif (isstruct(link))
-    if !(isfield(link, 'link') && isfield(link, 'derivative') && isfield(link, 'inverse'))
-      error('link function as struct must have "link", "derivative" and "inverse" ...
-      fields each one containing the correspondant function')
+  _link = IDENTITY_LINK;
+
+  if (ischar(results.link))
+    switch (results.link)
+    case "identity"
+      _link = IDENTITY_LINK;
+    case "log"
+      _link = LOG_LINK;
+    case "logit"
+      _link = LOGIT_LINK;
+    case "probit"
+      _link = PROBIT_LINK;
+    case "loglog"
+      _link = LOGLOG_LINK;
+    case "comploglog"
+      _link = COMPLOGLOG_LINK;
+    case "reciprocal"
+      _link = RECIPROCAL_LINK;
+    case "p"
+      _link = P_LINK;
+    otherwise
+      error(strcat('<',link,'> link function not yet supported'))
+    endswitch
+  elseif (isstruct(results.link))
+    if (!(isfield(results.link, 'link') && isfield(results.link, 'derivative') && ...
+        isfield(results.link, 'inverse')))
+      error("link function as struct must have \"link\", \"derivative\" and \"inverse\" \
+      fields each one containing the correspondant function")
     endif
   else
     error('link function must be a struct or a string, type help glmfit');
@@ -202,14 +227,48 @@ function [b, varargout] = glmfit (X, y, distribution, varargin)
     X = X + results.offset' * ones(mx,ny);
   endif
 
-  % creating
+  # p-distribution NOT SUPPORTED!
   % estimation of the coefficients using IRLS (iteratively reweighted least squares)
-  [b, tolerance] = irls(X, results.link.link(y), N, 'tolerance', abs(results.tolx), ...
-  'weights', w, 'B0', results.B0);
+  switch(tolower(distribution))
+    case "poisson"
+      nil = @(b) - sum ((y .* X * b) - _link.inverse(X * b) - gammaln(y+1));
+    case "binomial"
+      eps = 1e-6;
+      if (size(y, 2) == 1)
+        successes = y;
+        trials = ones(size(y));
+      else # it can only have two columns then
+        success = y(:,1);
+        trials = y(:,2);
+      endif
+      nil = @(b) ...
+      - sum(successes .* log(max(min(_link.inverse(X * b), 1 - eps), eps)) ...
+      + (trials - successes) ...
+      .* log(1 - max(min(_link.inverse(X * b), 1 - eps), eps)));
+    case "normal"
+      nil = @(b) 0.5 * sum((y - _link.inverse(X * b)) .^ 2);
+  endswitch
+
+  options = optimset('MaxFunEvals', 10000, 'MaxIter', 10000);
+  b = fminsearch(nil, b, options);
   
   stats = struct;
   stats.covb = cov(X * b, X * b);
-  stats.coeffcorr = corrcoef(X, y'*ones(size(X)));
+
+  if (strcmp(results.constant,'on'))
+    if (strncmp(distribution, 'binomial', 5))
+      stats.coeffcorr = corrcoef(X(:,2:end)*b(2:end) + b(1), p*ones(1,nx));
+    else
+      stats.coeffcorr = corrcoef(X(:,2:end)*b(2:end) + b(1), y*ones(1,nx));
+    endif
+  else
+    if (strncmp(distribution, 'binomial', 5))
+      stats.coeffcorr = corrcoef(X*b, p*ones(1,nx));
+    else
+      stats.coeffcorr = corrcoef(X*b, y*ones(1,nx));
+    endif
+  endif
+
   stats.dfe = length(b);
   # stats.sfit = ...;
   stats.estdisp = [0, 1](strcmp(results.estimdisp,'on') + 1);
@@ -218,7 +277,7 @@ function [b, varargout] = glmfit (X, y, distribution, varargin)
 
   % residuals: basic residual, p-value residual, deviance residual, anscombe residual
   if (strcmp(results.constant, 'on'))
-    stats.resid = abs(y - link.inverse(X(:,2:end)*b(2:end) + b(1)));
+    stats.resid = abs(y - _link.inverse(X(:,2:end)*b(2:end) + b(1)));
     deviance = y - mean(X(:,2:end)*b(2:end) + b(1));
   else
     stats.resid = abs(y - X*b);
@@ -226,7 +285,7 @@ function [b, varargout] = glmfit (X, y, distribution, varargin)
   endif
 
   stats.residp = stats.resid ./ sqrt(y);
-  stats.residd = (y - link.inverse(X(:,2:end)*b(2:end) + b(1))) ./ sqrt(deviance);
+  stats.residd = (y - _link.inverse(X(:,2:end)*b(2:end) + b(1))) ./ sqrt(deviance);
 
   if (strcmp(results.constant, 'on'))
     mu = X(:,2:end) * b(2:end) + b(1);
@@ -235,11 +294,17 @@ function [b, varargout] = glmfit (X, y, distribution, varargin)
   endif
 
   if (strncmp(distribution, 'binomial', 5))
-    stats.resida = sqrt(y(:,1)).*(link.link(y(:,2)) - link.link(mu)) ./ ...
-    (link.derivative(mu).*sqrt(var(mu)));
+    stats.resida = sqrt(y(:,1)).*(_link.link(y(:,2)) - _link.link(mu)) ./ ...
+    (_link.derivative(mu).*sqrt(var(mu)));
   else
-    stats.resida = (link.link(y) - link.link(mu))./(link.derivative(mu).*sqrt(var(mu)));
+    stats.resida = (_link.link(y) - _link.link(mu))./(_link.derivative(mu).*...
+    sqrt(var(mu)));
   endif
+
+  % deviance not implemented
+  dev = 0;
+
+  % still need to implement the options.display parameter
 endfunction
 
 %!demo
@@ -250,13 +315,13 @@ endfunction
 %! randp ("seed", 1);
 %! y = poissrnd (mu);
 %! ## Fit a GLM model using the poisson distribution
-%! [b,dev] = glmfit (X, y, 'poisson');
+%! [b,dev] = glmfit (X, y, 'poisson')
 
 %!demo
 %! x = [2100 2300 2500 2700 2900 3100 3300 3500 3700 3900 4100 4300]';
 %! n = [48 42 31 34 31 21 23 23 21 16 17 21]';
 %! y = [1 2 0 3 8 8 14 17 19 15 17 21]';
-%! [b,dev] = glmfit (x,[y n],'binomial','Link','probit');
+%! [b,dev] = glmfit (x,[y n],'binomial','link','probit')
 
 ## Test output
 %!test
