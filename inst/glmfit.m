@@ -215,6 +215,31 @@ function [b, varargout] = glmfit (X, y, distribution, varargin)
   stats.estdisp = [0, 1](strcmp(results.estimdisp,'on') + 1);
   [M, V] = tstat(b);
   stats.t = {M,V};
+
+  % residuals: basic residual, p-value residual, deviance residual, anscombe residual
+  if (strcmp(results.constant, 'on'))
+    stats.resid = abs(y - link.inverse(X(:,2:end)*b(2:end) + b(1)));
+    deviance = y - mean(X(:,2:end)*b(2:end) + b(1));
+  else
+    stats.resid = abs(y - X*b);
+    deviance = y - mean(X*b)
+  endif
+
+  stats.residp = stats.resid ./ sqrt(y);
+  stats.residd = (y - link.inverse(X(:,2:end)*b(2:end) + b(1))) ./ sqrt(deviance);
+
+  if (strcmp(results.constant, 'on'))
+    mu = X(:,2:end) * b(2:end) + b(1);
+  else
+    mu = X*b;
+  endif
+
+  if (strncmp(distribution, 'binomial', 5))
+    stats.resida = sqrt(y(:,1)).*(link.link(y(:,2)) - link.link(mu)) ./ ...
+    (link.derivative(mu).*sqrt(var(mu)));
+  else
+    stats.resida = (link.link(y) - link.link(mu))./(link.derivative(mu).*sqrt(var(mu)));
+  endif
 endfunction
 
 %!demo
