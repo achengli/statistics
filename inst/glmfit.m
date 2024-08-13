@@ -184,7 +184,7 @@ function [b, dev, stats] = glmfit (X, y, distribution, varargin)
     w = results.weights;
   endif
 
-  N = 100;
+  N = 10000;
   if (results.options.maxiter > 0)
     N = results.options.maxiter;
   endif
@@ -228,7 +228,6 @@ function [b, dev, stats] = glmfit (X, y, distribution, varargin)
   endif
 
   # p-distribution NOT SUPPORTED!
-  % estimation of the coefficients using IRLS (iteratively reweighted least squares)
   switch(tolower(distribution))
     case "poisson"
       nil = @(b) - sum ((y .* X * b) - _link.inverse(X * b) - gammaln(y+1));
@@ -249,7 +248,8 @@ function [b, dev, stats] = glmfit (X, y, distribution, varargin)
       nil = @(b) 0.5 * sum((y - _link.inverse(X * b)) .^ 2);
   endswitch
 
-  options = optimset('MaxFunEvals', 10000, 'MaxIter', 10000);
+  # fitting the model
+  options = optimset('MaxFunEvals', 10000, 'MaxIter', N);
   b = fminsearch(nil, b, options);
   
   stats = struct;
@@ -260,6 +260,8 @@ function [b, dev, stats] = glmfit (X, y, distribution, varargin)
       stats.coeffcorr = corrcoef(X(:,2:end)*b(2:end) + b(1), p*ones(1,nx));
     else
       stats.coeffcorr = corrcoef(X(:,2:end)*b(2:end) + b(1), y*ones(1,nx));
+      % debug
+      size(X(:,2:end)*b(2:end) + b(1)), size(y*ones(1,nx))
     endif
   else
     if (strncmp(distribution, 'binomial', 5))
@@ -301,9 +303,30 @@ function [b, dev, stats] = glmfit (X, y, distribution, varargin)
     sqrt(var(mu)));
   endif
 
-  % deviance not implemented
-  dev = 0;
-
+  % deviance
+  dev = [];
+  switch (tolower(distribution))
+  case "poisson"
+    p = exp(X*b);
+    eps = 1e-6;
+    dev = sum (2 * (y .* log ((y + eps) ./ (p + eps)) - (y - p)));
+  case "binomial"
+    eps = 1e-10;
+    if (size (y, 2) == 1)
+      successes = y;
+      trials = ones(size (y));
+    elseif (size (y, 2) == 2)
+      successes = y(:, 1);
+      trials = y(:, 2);
+    endif
+    p_hat = max (min (ilink (X * b), 1 - eps), eps);
+    p = successes ./ trials;
+    p = max (min (p, 1 - eps), eps);
+    dev = 2 * sum (successes .* log (p ./ p_hat) ...
+    + (trials - successes) .* log ((1 - p) ./ (1 - p_hat)));
+  case "normal"
+    dev = sum ((y - (X * b)) .^ 2);
+  endswitch
   % still need to implement the options.display parameter
 endfunction
 
