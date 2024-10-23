@@ -22,9 +22,16 @@ Clustering
  slicesample
  squareform
 Classification Classes
+ ClassificationDiscriminant
+ ClassificationGAM
  ClassificationKNN
+ ClassificationNeuralNetwork
  ClassificationPartitionedModel
  ClassificationSVM
+ CompactClassificationDiscriminant
+ CompactClassificationGAM
+ CompactClassificationNeuralNetwork
+ CompactClassificationSVM
  ConfusionMatrixChart
 Clustering Classes
  CalinskiHarabaszEvaluation
@@ -225,13 +232,18 @@ Experimental Design
  sigma_pts
  x2fx
 Machine Learning
+ fcnnpredict
+ fcnntrain
  hmmestimate
  hmmgenerate
  hmmviterbi
  svmpredict
  svmtrain
 Model Fitting
+ fitcdiscr
+ fitcgam
  fitcknn
+ fitcnet
  fitcsvm
  fitgmdist
  fitlm
@@ -263,7 +275,9 @@ Hypothesis Testing
  regression_ttest
  runstest
  sampsizepwr
+ signrank
  signtest
+ tiedrank
  ttest
  ttest2
  vartest
@@ -274,6 +288,7 @@ Hypothesis Testing
 I/O
  libsvmread
  libsvmwrite
+ loadmodel
 Plotting
  bar3
  bar3h

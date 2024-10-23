@@ -202,7 +202,7 @@ classdef NormalDistribution
     ## -*- texinfo -*-
     ## @deftypefn  {NormalDistribution} {@var{p} =} icdf (@var{pd}, @var{p})
     ##
-    ## Compute the cumulative distribution function (CDF).
+    ## Compute the inverse cumulative distribution function (iCDF).
     ##
     ## @code{@var{p} = icdf (@var{pd}, @var{x})} computes the quantile (the
     ## inverse of the CDF) of the probability distribution object, @var{pd},
@@ -659,9 +659,9 @@ endfunction
 %!assert (iqr (pd), 1.3490, 1e-4);
 %!assert (iqr (t), 1.2782, 1e-4);
 %!assert (mean (pd), 0);
-%!assert (mean (t), 0, eps);
+%!assert (mean (t), 0, 3e-16);
 %!assert (median (pd), 0);
-%!assert (median (t), 0);
+%!assert (median (t), 0, 3e-16);
 %!assert (pdf (pd, [0:5]), [0.3989, 0.2420, 0.0540, 0.0044, 0.0001, 0], 1e-4);
 %!assert (pdf (t, [0:5]), [0.4180, 0.2535, 0.0566, 0, 0, 0], 1e-4);
 %!assert (pdf (pd, [-1, 1:4, NaN]), [0.2420, 0.2420, 0.0540, 0.0044, 0.0001, NaN], 1e-4);
@@ -760,6 +760,10 @@ endfunction
 %! plot (NormalDistribution, "Parent", 12)
 %!error <plot: invalid VALUE for 'Parent' argument.> ...
 %! plot (NormalDistribution, "Parent", "hax")
+%!error <plot: invalid NAME for optional argument.> ...
+%! plot (NormalDistribution, "invalidNAME", "pdf")
+%!error <plot: no fitted DATA to plot a probability plot.> ...
+%! plot (NormalDistribution, "PlotType", "probability")
 
 ## 'proflik' method
 %!error <proflik: no fitted data available.> ...

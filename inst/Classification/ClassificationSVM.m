@@ -48,59 +48,59 @@ classdef ClassificationSVM
 ## data and various parameters for the Support Vector machine classification
 ## model, which can be accessed in the following fields:
 ##
-## @multitable @columnfractions 0.28 0.02 0.7
+## @multitable @columnfractions 0.23 0.02 0.75
 ## @headitem @var{Field} @tab @tab @var{Description}
 ##
-## @item @qcode{obj.X} @tab @tab Unstandardized predictor data, specified as a
+## @item @qcode{X} @tab @tab Unstandardized predictor data, specified as a
 ## numeric matrix.  Each column of @var{X} represents one predictor (variable),
 ## and each row represents one observation.
 ##
-## @item @qcode{obj.Y} @tab @tab Class labels, specified as a logical or
+## @item @qcode{Y} @tab @tab Class labels, specified as a logical or
 ## numeric vector, or cell array of character vectors.  Each value in @var{Y} is
 ## the observed class label for the corresponding row in @var{X}.
 ##
-## @item  @qcode{obj.NumObservations} @tab@tab Number of observations used in
+## @item  @qcode{NumObservations} @tab@tab Number of observations used in
 ## training the ClassificationSVM model, specified as a positive integer scalar.
 ## This number can be less than the number of rows in the training data because
 ## rows containing @qcode{NaN} values are not part of the fit.
 ##
-## @item @qcode{obj.RowsUsed} @tab @tab Rows of the original training data
+## @item @qcode{RowsUsed} @tab @tab Rows of the original training data
 ## used in fitting the ClassificationSVM model, specified as a numerical vector.
 ## If you want to use this vector for indexing the training data in @var{X}, you
 ## have to convert it to a logical vector, i.e
 ## @qcode{X = obj.X(logical (obj.RowsUsed), :);}
 ##
-## @item @qcode{obj.Standardize} @tab @tab A boolean flag indicating whether
+## @item @qcode{Standardize} @tab @tab A boolean flag indicating whether
 ## the data in @var{X} have been standardized prior to training.
 ##
-## @item @qcode{obj.Sigma} @tab @tab Predictor standard deviations, specified
+## @item @qcode{Sigma} @tab @tab Predictor standard deviations, specified
 ## as a numeric vector of the same length as the columns in @var{X}.  If the
 ## predictor variables have not been standardized, then @qcode{"obj.Sigma"} is
 ## empty.
 ##
-## @item @qcode{obj.Mu} @tab @tab Predictor means, specified as a numeric
+## @item @qcode{Mu} @tab @tab Predictor means, specified as a numeric
 ## vector of the same length as the columns in @var{X}.  If the predictor
 ## variables have not been standardized, then @qcode{"obj.Mu"} is empty.
 ##
-## @item @qcode{obj.NumPredictors} @tab @tab The number of predictors
+## @item @qcode{NumPredictors} @tab @tab The number of predictors
 ## (variables) in @var{X}.
 ##
-## @item @qcode{obj.PredictorNames} @tab @tab Predictor variable names,
+## @item @qcode{PredictorNames} @tab @tab Predictor variable names,
 ## specified as a cell array of character vectors.  The variable names are in
 ## the same order in which they appear in the training data @var{X}.
 ##
-## @item @qcode{obj.ResponseName} @tab @tab Response variable name, specified
+## @item @qcode{ResponseName} @tab @tab Response variable name, specified
 ## as a character vector.
 ##
-## @item @qcode{obj.ClassNames} @tab @tab Names of the classes in the class
+## @item @qcode{ClassNames} @tab @tab Names of the classes in the class
 ## labels, @var{Y}, used for fitting the SVM model.  @qcode{ClassNames} are of
 ## the same type as the class labels in @var{Y}.
 ##
-## @item @qcode{obj.Prior} @tab @tab Prior probabilities for each class,
+## @item @qcode{Prior} @tab @tab Prior probabilities for each class,
 ## specified as a numeric vector.  The order of the elements in @qcode{Prior}
 ## corresponds to the order of the classes in @qcode{ClassNames}.
 ##
-## @item @qcode{obj.Cost} @tab @tab Cost of the misclassification of a point,
+## @item @qcode{Cost} @tab @tab Cost of the misclassification of a point,
 ## specified as a square matrix. @qcode{Cost(i,j)} is the cost of classifying a
 ## point into class @qcode{j} if its true class is @qcode{i} (that is, the rows
 ## correspond to the true class and the columns correspond to the predicted
@@ -111,7 +111,7 @@ classdef ClassificationSVM
 ## @qcode{i = j}.  In other words, the cost is 0 for correct classification and
 ## 1 for incorrect classification.
 ##
-## @item @qcode{obj.ScoreTransform} @tab @tab A function_handle which is used
+## @item @qcode{ScoreTransform} @tab @tab A function_handle which is used
 ## for transforming the SVM prediction score into a posterior probability.  By
 ## default, it is @qcode{'none'}, in which case the @code{predict} and
 ## @code{resubPredict} methods return the prediction scores.  Use the
@@ -119,33 +119,36 @@ classdef ClassificationSVM
 ## in which case the @code{predict} and @code{resubPredict} methods return the
 ## posterior probabilities.
 ##
-## @item @qcode{obj.ModelParameters} @tab @tab  A structure containing the
+## @item @qcode{ModelParameters} @tab @tab  A structure containing the
 ## parameters used to train the SVM model with the following fields:
 ## @code{SVMtype}, @code{BoxConstraint}, @code{CacheSize}, @code{KernelScale},
 ## @code{KernelOffset}, @code{KernelFunction}, @code{PolynomialOrder},
 ## @code{Nu}, @code{Tolerance}, and @code{Shrinking}.  Type @code{help fitcsvm}
 ## for more info on their usage and default values.
 ##
-## @item @tab @qcode{obj.Alpha} @tab The coefficients of the trained SVM
+## @item @qcode{Model} @tab @tab  A structure containing the trained model in
+## @qcode{'libsvm'} format.
+##
+## @item @qcode{Alpha} @tab @tab The coefficients of the trained SVM
 ## classifier specified as an @math{sx1} numeric vector, where @math{s} is the
 ## number of support vectors equal to @qcode{sum (obj.IsSupportVector)}.  If the
 ## SVM classifier was trained with a @qcode{'linear'} kernel function, then
 ## @qcode{obj.Alpha} is left empty.
 ##
-## @item @tab @qcode{obj.Beta} @tab The linear predictor coefficients specified
+## @item @qcode{Beta} @tab @tab The linear predictor coefficients specified
 ## as an @math{sx1} numeric vector, where @math{s} is the number of support
 ## vectors equal to @qcode{sum (obj.IsSupportVector)}.  If the SVM classifier
 ## was trained with a kernel function other than @qcode{'linear'}, then
 ## @qcode{obj.Beta} is left empty.
 ##
-## @item @tab @qcode{obj.Bias} @tab The bias term specified as a scalar.
+## @item @qcode{Bias} @tab @tab The bias term specified as a scalar.
 ##
-## @item @tab @qcode{obj.IsSupportVector} @tab Support vector indicator,
+## @item @qcode{IsSupportVector} @tab @tab Support vector indicator,
 ## specified as an @math{Nx1} logical vector that flags whether a corresponding
 ## observation in the predictor data matrix is a Support Vector.  @math{N} is
 ## the number of observations in the training data (see @code{NumObservations}).
 ##
-## @item @tab @qcode{obj.SupportVectorLabels} @tab The support vector class
+## @item @qcode{SupportVectorLabels} @tab @tab The support vector class
 ## labels specified as an @math{sx1} numeric vector, where @math{s} is the
 ## number of support vectors equal to @qcode{sum (obj.IsSupportVector)}.  A
 ## value of +1 in @code{SupportVectorLabels} indicates that the corresponding
@@ -153,7 +156,7 @@ classdef ClassificationSVM
 ## value of -1 indicates that the corresponding support vector belongs to the
 ## negative class @qcode{(ClassNames@{1@})}.
 ##
-## @item @tab @qcode{obj.SupportVectors} @tab The support vectors of the
+## @item @qcode{SupportVectors} @tab @tab The support vectors of the
 ## trained SVM classifier specified an @math{sxp} numeric matrix, where @math{s}
 ## is the number of support vectors equal to @qcode{sum (obj.IsSupportVector)},
 ## and @math{p} is the number of predictor variables in the predictor data.
@@ -170,10 +173,6 @@ classdef ClassificationSVM
 
     NumObservations     = [];    # Number of observations in training dataset
     RowsUsed            = [];    # Rows used in fitting
-    Standardize         = [];    # Flag to standardize predictors
-    Sigma               = [];    # Predictor standard deviations
-    Mu                  = [];    # Predictor means
-
     NumPredictors       = [];    # Number of predictors
     PredictorNames      = [];    # Predictor variables names
     ResponseName        = [];    # Response variable name
@@ -183,7 +182,12 @@ classdef ClassificationSVM
 
     ScoreTransform      = [];    # Transformation for classification scores
 
-    ModelParameters     = [];    # SVM parameters.
+    Standardize         = [];    # Flag to standardize predictors
+    Sigma               = [];    # Predictor standard deviations
+    Mu                  = [];    # Predictor means
+
+    ModelParameters     = [];    # SVM parameters
+    Model               = [];    # Stores the 'libsvm' trained model
 
     Alpha               = [];    # Trained classifier coefficients
     Beta                = [];    # Linear predictor coefficients
@@ -192,23 +196,6 @@ classdef ClassificationSVM
     IsSupportVector     = [];    # Indices of Support vectors
     SupportVectorLabels = [];    # Support vector class labels
     SupportVectors      = [];    # Support vectors
-
-  endproperties
-
-  properties (Access = private)
-
-    Model               = [];    # Stores the 'libsvm' trained model
-
-    SVMtype             = [];    # Type of SVM
-    BoxConstraint       = [];    # Box Constraint
-    CacheSize           = [];    # Cache Size
-    KernelScale         = [];    # gamma = KernelScale / columns (X)
-    KernelOffset        = [];    # Kernel Offset
-    KernelFunction      = [];    # Kernel Function
-    PolynomialOrder     = [];    # Order of Polynomial in kernel
-    Nu                  = [];    # Nu
-    Tolerance           = [];    # Tolerance for convergence
-    Shrinking           = [];    # Shrinking
 
   endproperties
 
@@ -242,7 +229,7 @@ classdef ClassificationSVM
       BoxConstraint           = 1;
       Nu                      = 0.5;
       CacheSize               = 1000;
-      Tolerance               = 1e-3;
+      Tolerance               = 1e-6;
       Shrinking               = 1;
       Standardize             = false;
       ResponseName            = [];
@@ -317,6 +304,10 @@ classdef ClassificationSVM
               error (strcat (["ClassificationSVM: 'Cost' must be"], ...
                              [" a numeric square matrix."]));
             endif
+
+          case "scoretransform"
+            name = "ClassificationSVM";
+            this.ScoreTransform = parseScoreTransform (varargin{2}, name);
 
           case "svmtype"
             SVMtype = varargin{2};
@@ -442,10 +433,11 @@ classdef ClassificationSVM
 
       ## Renew groups in Y
       [gY, gnY, glY] = grp2idx (Y);
+      nclasses = numel (gnY);
       this.ClassNames = glY;  # Keep the same type as Y
 
       ## If only one class available, force 'SVMtype' to 'one_class_svm'
-      if (numel (gnY) == 1)
+      if (nclasses == 1)
         if (! SVMtype_override && ! strcmp (SVMtype, 'one_class_svm'))
           error (strcat (["ClassificationSVM: cannot train a binary"], ...
                          [" problem with only one class available."]));
@@ -461,7 +453,7 @@ classdef ClassificationSVM
       endif
 
       ## Check that we are dealing only with one-class or binary classification
-      if (numel (gnY) > 2)
+      if (nclasses > 2)
         error (strcat (["ClassificationSVM: can only be used for"], ...
                        [" one-class or two-class learning."]));
       endif
@@ -469,6 +461,12 @@ classdef ClassificationSVM
       ## Force Y into numeric
       if (! isnumeric (Y))
         Y = gY;
+      endif
+
+      ## Force Y labels to -1 and +1 to avoid numeric issues with different
+      ## compiling options; see https://github.com/cjlin1/libsvm/issues/220
+      if (nclasses == 2)
+        Y(Y == 2) = -1;
       endif
 
       ## Check X contains valid data
@@ -496,24 +494,24 @@ classdef ClassificationSVM
 
       ## Handle Prior and Cost
       if (strcmpi ("uniform", Prior))
-        this.Prior = ones (size (gnY)) ./ numel (gnY);
+        this.Prior = ones (size (gnY)) ./ nclasses;
       elseif (isempty (Prior) || strcmpi ("empirical", Prior))
         pr = [];
-        for i = 1:numel (gnY)
+        for i = 1:nclasses
           pr = [pr; sum(gY==i)];
         endfor
         this.Prior = pr ./ sum (pr);
       elseif (isnumeric (Prior))
-        if (numel (gnY) != numel (Prior))
+        if (nclasses != numel (Prior))
           error (strcat (["ClassificationSVM: the elements in 'Prior' do"], ...
                          [" not correspond to selected classes in Y."]));
         endif
         this.Prior = Prior ./ sum (Prior);
       endif
       if (isempty (Cost))
-        this.Cost = cast (! eye (numel (gnY)), "double");
+        this.Cost = cast (! eye (nclasses), "double");
       else
-        if (numel (gnY) != sqrt (numel (Cost)))
+        if (nclasses != sqrt (numel (Cost)))
           error (strcat (["ClassificationSVM: the number of rows and"], ...
                          [" columns in 'Cost' must correspond to"], ...
                          [" the selected classes in Y."]));
@@ -558,17 +556,6 @@ classdef ClassificationSVM
       ## Set svmtrain parameters for gamma
       g = KernelScale / ndims_X;
 
-      ## Assign remaining properties
-      this.SVMtype          = SVMtype;
-      this.KernelFunction   = KernelFunction;
-      this.PolynomialOrder  = PolynomialOrder;
-      this.KernelScale      = KernelScale;
-      this.KernelOffset     = KernelOffset;
-      this.BoxConstraint    = BoxConstraint;
-      this.Nu               = Nu;
-      this.CacheSize        = CacheSize;
-      this.Tolerance        = Tolerance;
-      this.Shrinking        = Shrinking;
       ## svmpredict:
       ##    '-s':  SVMtype
       ##    '-t':  KernelFunction
@@ -583,7 +570,7 @@ classdef ClassificationSVM
 
       ## Build options string for svmtrain function
       str_options = strcat (["-s %d -t %d -g %f -d %d -r %f"], ...
-                            [" -c %f -n %f -m %f -e %f -h %d -q"]);
+                            [" -c %f -n %f -m %f -e %e -h %d -q"]);
       svm_options = sprintf (str_options, s, t, g, PolynomialOrder, ...
                              KernelOffset, BoxConstraint, Nu, ...
                              CacheSize, Tolerance, Shrinking);
@@ -614,16 +601,12 @@ classdef ClassificationSVM
       this.SupportVectors = Model.SVs;
 
       ## Populate ModelParameters structure
-      params = struct();
-      paramList = {'SVMtype', 'BoxConstraint', 'CacheSize', ...
-                   'KernelScale', 'KernelOffset', 'KernelFunction', ...
-                   'PolynomialOrder', 'Nu', 'Tolerance', 'Shrinking'};
-      for i = 1:numel (paramList)
-        paramName = paramList{i};
-        if (isprop (this, paramName))
-          params.(paramName) = this.(paramName);
-        endif
-      endfor
+      params = struct ('SVMtype', SVMtype, 'BoxConstraint', BoxConstraint, ...
+                       'CacheSize', CacheSize, 'KernelScale', KernelScale, ...
+                       'KernelOffset', KernelOffset, 'KernelFunction', ...
+                        KernelFunction, 'PolynomialOrder', PolynomialOrder, ...
+                        'Nu', Nu, 'Tolerance',Tolerance, ...
+                        'Shrinking', Shrinking);
       this.ModelParameters = params;
 
     endfunction
@@ -637,8 +620,7 @@ classdef ClassificationSVM
     ##
     ## @code{@var{labels} = predict (@var{obj}, @var{XC})} returns the vector of
     ## labels predicted for the corresponding instances in @var{XC}, using the
-    ## predictor data in @code{obj.X} and corresponding labels, @code{obj.Y},
-    ## stored in the Support Vector Machine classification model, @var{obj}.
+    ## trained Support Vector Machine classification model, @var{obj}.
     ## For one-class SVM model, +1 or -1 is returned.
     ##
     ## @itemize
@@ -646,7 +628,7 @@ classdef ClassificationSVM
     ## @var{obj} must be a @qcode{ClassificationSVM} class object.
     ## @item
     ## @var{XC} must be an @math{MxP} numeric matrix with the same number of
-    ## features @math{P} as the corresponding predictors of the SVM model in
+    ## predictors @math{P} as the corresponding predictors of the SVM model in
     ## @var{obj}.
     ## @end itemize
     ##
@@ -659,24 +641,20 @@ classdef ClassificationSVM
     ## @seealso{fitcsvm, ClassificationSVM.fitPosterior}
     ## @end deftypefn
 
-    function [labels, scores] = predict (this, XC, varargin)
+    function [labels, scores] = predict (this, XC)
 
       ## Check for sufficient input arguments
       if (nargin < 2)
         error ("ClassificationSVM.predict: too few input arguments.");
       endif
 
-      if (mod (nargin, 2) != 0)
-        error (strcat (["ClassificationSVM.predict: Name-Value"], ...
-                       [" arguments must be in pairs."]));
-      endif
-
       ## Check for valid XC
       if (isempty (XC))
         error ("ClassificationSVM.predict: XC is empty.");
-      elseif (columns (this.X) != columns (XC))
-        error (strcat (["ClassificationSVM.predict: XC must have the"], ...
-                       [" same number of features as in the SVM model."]));
+      elseif (this.NumPredictors != columns (XC))
+        error (strcat (["ClassificationSVM.predict:"], ...
+                       [" XC must have the same number of"], ...
+                       [" predictors as the trained model."]));
       endif
 
       ## Standardize (if necessary)
@@ -848,14 +826,14 @@ classdef ClassificationSVM
       if (isempty (X))
         error ("ClassificationSVM.margin: X is empty.");
       elseif (columns (this.X) != columns (X))
-        error (strcat (["ClassificationSVM.margin: X must have the"], ...
-                       [" same number of features as in the SVM model."]));
+        error (strcat (["ClassificationSVM.margin: X must have the same"], ...
+                       [" number of predictors as the trained model."]));
       endif
 
       ## Check for valid Y
       if (isempty (Y))
         error ("ClassificationSVM.margin: Y is empty.");
-      elseif (rows (X)!= rows (Y))
+      elseif (rows (X) != rows (Y))
         error (strcat (["ClassificationSVM.margin: Y must have"], ...
                        [" the same number of rows as X."]));
       endif
@@ -963,7 +941,7 @@ classdef ClassificationSVM
         error ("ClassificationSVM.loss: X is empty.");
       elseif (columns (this.X) != columns (X))
         error (strcat (["ClassificationSVM.loss: X must have the same"], ...
-                       [" number of features as in the SVM model."]));
+                       [" number of predictors as the trained model."]));
       endif
 
       ## Check for valid Y
@@ -1257,8 +1235,7 @@ classdef ClassificationSVM
                        [" the optional Name-Value paired arguments."]));
       endif
 
-      ## Set default values before parsing optional parameters
-      numSamples  = size (this.X, 1);
+      ## Add default values
       numFolds    = 10;
       Holdout     = [];
       Leaveout    = 'off';
@@ -1310,11 +1287,11 @@ classdef ClassificationSVM
       if (! isempty (CVPartition))
         partition = CVPartition;
       elseif (! isempty (Holdout))
-        partition = cvpartition (numSamples, 'Holdout', Holdout);
+        partition = cvpartition (this.Y, 'Holdout', Holdout);
       elseif (strcmpi (Leaveout, 'on'))
-        partition = cvpartition (numSamples, 'LeaveOut');
+        partition = cvpartition (this.Y, 'LeaveOut');
       else
-        partition = cvpartition (numSamples, 'KFold', numFolds);
+        partition = cvpartition (this.Y, 'KFold', numFolds);
       endif
 
       ## Create a cross-validated model object
@@ -1401,9 +1378,89 @@ classdef ClassificationSVM
 
     endfunction
 
+    ## -*- texinfo -*-
+    ## @deftypefn  {ClassificationSVM} {@var{CVMdl} =} compact (@var{obj})
+    ##
+    ## Create a CompactClassificationSVM object.
+    ##
+    ## @code{@var{CVMdl} = compact (@var{obj})} creates a compact version of the
+    ## ClassificationSVM object, @var{obj}.
+    ##
+    ## @seealso{fitcnet, ClassificationSVM, CompactClassificationSVM}
+    ## @end deftypefn
+
+    function CVMdl = compact (this)
+      ## Greate a compact model
+      CVMdl = CompactClassificationSVM (this);
+    endfunction
+
+    ## -*- texinfo -*-
+    ## @deftypefn  {ClassificationSVM} {} savemodel (@var{obj}, @var{filename})
+    ##
+    ## Save a ClassificationSVM object.
+    ##
+    ## @code{savemodel (@var{obj}, @var{filename})} saves a ClassificationSVM
+    ## object into a file defined by @var{filename}.
+    ##
+    ## @seealso{loadmodel, fitcsvm, ClassificationSVM}
+    ## @end deftypefn
+
+    function savemodel (this, fname)
+      ## Generate variable for class name
+      classdef_name = "ClassificationSVM";
+
+      ## Create variables from model properties
+      X = this.X;
+      Y = this.Y;
+      NumObservations     = this.NumObservations;
+      RowsUsed            = this.RowsUsed;
+      NumPredictors       = this.NumPredictors;
+      PredictorNames      = this.PredictorNames;
+      ResponseName        = this.ResponseName;
+      ClassNames          = this.ClassNames;
+      Prior               = this.Prior;
+      Cost                = this.Cost;
+      ScoreTransform      = this.ScoreTransform;
+      Standardize         = this.Standardize;
+      Sigma               = this.Sigma;
+      Mu                  = this.Mu;
+      ModelParameters     = this.ModelParameters;
+      Model               = this.Model;
+      Alpha               = this.Alpha;
+      Beta                = this.Beta;
+      Bias                = this.Bias;
+      IsSupportVector     = this.IsSupportVector;
+      SupportVectorLabels = this.SupportVectorLabels;
+      SupportVectors      = this.SupportVectors;
+
+      ## Save classdef name and all model properties as individual variables
+      save (fname, "classdef_name", "X", "Y", "NumObservations", "RowsUsed", ...
+            "NumPredictors", "PredictorNames", "ResponseName", "ClassNames", ...
+            "Prior", "Cost", "ScoreTransform", "Standardize", "Sigma", "Mu", ...
+            "ModelParameters", "Model", "Alpha", "Beta", "Bias", ...
+            "IsSupportVector", "SupportVectorLabels", "SupportVectors");
+    endfunction
+
   endmethods
 
   methods (Static, Hidden)
+
+    function mdl = load_model (filename, data)
+      ## Create a ClassificationSVM object
+      mdl = ClassificationSVM (1, 1);
+
+      ## Check that fieldnames in DATA match properties in ClassificationSVM
+      names = fieldnames (data);
+      props = fieldnames (mdl);
+      if (! isequal (sort (names), sort (props)))
+        error ("ClassificationSVM.load_model: invalid model in '%s'.", filename)
+      endif
+
+      ## Copy data into object
+      for i = 1:numel (props)
+        mdl.(props{i}) = data.(props{i});
+      endfor
+    endfunction
 
     ## Helper functions for fitPosterior
     function prob = step (score, ub, lb, prior)
@@ -1414,7 +1471,7 @@ classdef ClassificationSVM
 
     function prob = sigmoid (score, a, b)
       prob = zeros (size (score));
-      prob = 1 ./ (1 + exp (a * score + b));
+      prob = 1 ./ (1 + exp (-a * score + b));
     endfunction
 
   endmethods
@@ -1646,16 +1703,16 @@ endclassdef
 %! y = grp2idx (species(inds));
 %!test
 %! xc = [min(x); mean(x); max(x)];
-%! obj = fitcsvm (x, y, 'KernelFunction', 'rbf');
+%! obj = fitcsvm (x, y, 'KernelFunction', 'rbf', 'Tolerance', 1e-7);
 %! assert (isempty (obj.Alpha), true)
 %! assert (sum (obj.IsSupportVector), numel (obj.Beta))
 %! [label, score] = predict (obj, xc);
 %! assert (label, [1; 2; 2]);
-%! assert (score(:,1), [0.993493; -0.080445; -0.937146], 1e-5);
+%! assert (score(:,1), [0.99285; -0.080296; -0.93694], 1e-5);
 %! assert (score(:,1), -score(:,2), eps)
 %! obj = fitPosterior (obj);
 %! [label, probs] = predict (obj, xc);
-%! assert (probs(:,1), [0.968554; 0.445186; 0.041888], 1e-5);
+%! assert (probs(:,2), [0.97555; 0.428164; 0.030385], 1e-5);
 %! assert (probs(:,1) + probs(:,2), [1; 1; 1], 0.05)
 %!test
 %! obj = fitcsvm (x, y);
@@ -1672,7 +1729,7 @@ endclassdef
 %! predict (ClassificationSVM (ones (40,2), ones (40,1)))
 %!error<ClassificationSVM.predict: XC is empty.> ...
 %! predict (ClassificationSVM (ones (40,2), ones (40,1)), [])
-%!error<ClassificationSVM.predict: XC must have the same number of features> ...
+%!error<ClassificationSVM.predict: XC must have the same number of predictors as the trained model.> ...
 %! predict (ClassificationSVM (ones (40,2), ones (40,1)), 1)
 %!test
 %! objST = fitcsvm (x, y);
@@ -1687,14 +1744,15 @@ endclassdef
 ## Test output for margin method
 %!test
 %! rand ("seed", 1);
-%! CVSVMModel = fitcsvm (x, y, 'KernelFunction', 'rbf', 'HoldOut', 0.15);
+%! CVSVMModel = fitcsvm (x, y, 'KernelFunction', 'rbf', 'HoldOut', 0.15, ...
+%!                       'Tolerance', 1e-7);
 %! obj = CVSVMModel.Trained{1};
 %! testInds = test (CVSVMModel.Partition);
-%! expected_margin = [3.7373;  3.0418;  3.9400;  -0.267;  2.6938; ...
-%!                    3.7373;  2.7256;  3.7234; -6.9825; -0.5341; ...
-%!                    -1.418; -8.2889; -7.1628; -8.2889; -6.4997];
-%! margin = margin (obj, x(testInds,:), y(testInds,:));
-%! assert (margin, expected_margin, 1e-4);
+%! expected_margin = [2.0000;  0.8579;  1.6690;  3.4141;  3.4552; ...
+%!                    2.6605;  3.5251; -4.0000; -6.3411; -6.4511; ...
+%!                   -3.0532; -7.5054; -1.6700; -5.6227; -7.3640];
+%! computed_margin = margin (obj, x(testInds,:), y(testInds,:));
+%! assert (computed_margin, expected_margin, 1e-4);
 
 ## Test input validation for margin method
 %!error<ClassificationSVM.margin: too few input arguments.> ...
@@ -1703,7 +1761,7 @@ endclassdef
 %! margin (ClassificationSVM (ones (40,2), randi ([1, 2], 40, 1)), zeros (2))
 %!error<ClassificationSVM.margin: X is empty.> ...
 %! margin (ClassificationSVM (ones (40,2), randi ([1, 2], 40, 1)), [], zeros (2))
-%!error<ClassificationSVM.margin: X must have the same number of features as in the SVM model.> ...
+%!error<ClassificationSVM.margin: X must have the same number of predictors as the trained model.> ...
 %! margin (ClassificationSVM (ones (40,2), randi ([1, 2], 40, 1)), 1, zeros (2))
 %!error<ClassificationSVM.margin: Y is empty.> ...
 %! margin (ClassificationSVM (ones (40,2), randi ([1, 2], 40, 1)), zeros (2), [])
@@ -1722,12 +1780,12 @@ endclassdef
 %! L4 = loss (obj, x(testInds,:), y(testInds,:), 'LossFun', 'hinge');
 %! L5 = loss (obj, x(testInds,:), y(testInds,:), 'LossFun', 'logit');
 %! L6 = loss (obj, x(testInds,:), y(testInds,:), 'LossFun', 'quadratic');
-%! assert (L1, 2.7305, 1e-4);
+%! assert (L1, 2.8711, 1e-4);
 %! assert (L2, 0.5333, 1e-4);
-%! assert (L3, 15.101, 1e-3);
-%! assert (L4, 1.8481, 1e-4);
-%! assert (L5, 1.5109, 1e-4);
-%! assert (L6, 8.1119, 1e-4);
+%! assert (L3, 10.9685, 1e-4);
+%! assert (L4, 1.9827, 1e-4);
+%! assert (L5, 1.5849, 1e-4);
+%! assert (L6, 7.6739, 1e-4);
 
 ## Test input validation for loss method
 %!error<ClassificationSVM.loss: too few input arguments.> ...
@@ -1739,7 +1797,7 @@ endclassdef
 %! ones(2,1), "LossFun")
 %!error<ClassificationSVM.loss: X is empty.> ...
 %! loss (ClassificationSVM (ones (40,2), randi ([1, 2], 40, 1)), [], zeros (2))
-%!error<ClassificationSVM.loss: X must have the same number of features> ...
+%!error<ClassificationSVM.loss: X must have the same number of predictors as the trained model.> ...
 %! loss (ClassificationSVM (ones (40,2), randi ([1, 2], 40, 1)), 1, zeros (2))
 %!error<ClassificationSVM.loss: Y is empty.> ...
 %! loss (ClassificationSVM (ones (40,2), randi ([1, 2], 40, 1)), zeros (2), [])
@@ -1787,24 +1845,27 @@ endclassdef
 
 ## Test output for crossval method
 %!test
-%! SVMModel = fitcsvm(x,y);
+%! SVMModel = fitcsvm (x, y);
 %! CVMdl = crossval (SVMModel, "KFold", 5);
 %! assert (class (CVMdl), "ClassificationPartitionedModel")
 %! assert ({CVMdl.X, CVMdl.Y}, {x, y})
 %! assert (CVMdl.KFold == 5)
-%! assert (class (CVMdl.Trained{1}), "ClassificationSVM")
+%! assert (class (CVMdl.Trained{1}), "CompactClassificationSVM")
+%! assert (CVMdl.CrossValidatedModel, "ClassificationSVM")
 %!test
 %! obj = fitcsvm (x, y);
 %! CVMdl = crossval (obj, "HoldOut", 0.2);
 %! assert (class (CVMdl), "ClassificationPartitionedModel")
 %! assert ({CVMdl.X, CVMdl.Y}, {x, y})
-%! assert (class (CVMdl.Trained{1}), "ClassificationSVM")
+%! assert (class (CVMdl.Trained{1}), "CompactClassificationSVM")
+%! assert (CVMdl.CrossValidatedModel, "ClassificationSVM")
 %!test
 %! obj = fitcsvm (x, y);
 %! CVMdl = crossval (obj, "LeaveOut", 'on');
 %! assert (class (CVMdl), "ClassificationPartitionedModel")
 %! assert ({CVMdl.X, CVMdl.Y}, {x, y})
-%! assert (class (CVMdl.Trained{1}), "ClassificationSVM")
+%! assert (class (CVMdl.Trained{1}), "CompactClassificationSVM")
+%! assert (CVMdl.CrossValidatedModel, "ClassificationSVM")
 
 ## Test input validation for crossval method
 %!error<ClassificationSVM.crossval: Name-Value arguments must be in pairs.> ...

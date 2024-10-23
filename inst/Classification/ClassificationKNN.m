@@ -48,55 +48,55 @@ classdef ClassificationKNN
 ## data and various parameters for the k-Nearest Neighbor classification model,
 ## which can be accessed in the following fields:
 ##
-## @multitable @columnfractions 0.28 0.02 0.7
+## @multitable @columnfractions 0.23 0.02 0.75
 ## @headitem @var{Field} @tab @tab @var{Description}
 ##
-## @item @qcode{obj.X} @tab @tab Unstandardized predictor data, specified as a
+## @item @qcode{X} @tab @tab Unstandardized predictor data, specified as a
 ## numeric matrix.  Each column of @var{X} represents one predictor (variable),
 ## and each row represents one observation.
 ##
-## @item @qcode{obj.Y} @tab @tab Class labels, specified as a logical or
+## @item @qcode{Y} @tab @tab Class labels, specified as a logical or
 ## numeric vector, or cell array of character vectors.  Each value in @var{Y} is
 ## the observed class label for the corresponding row in @var{X}.
 ##
-## @item @qcode{obj.NumObservations} @tab @tab Number of observations used in
+## @item @qcode{NumObservations} @tab @tab Number of observations used in
 ## training the ClassificationKNN model, specified as a positive integer scalar.
 ## This number can be less than the number of rows in the training data because
 ## rows containing @qcode{NaN} values are not part of the fit.
 ##
-## @item @qcode{obj.RowsUsed} @tab @tab Rows of the original training data
+## @item @qcode{RowsUsed} @tab @tab Rows of the original training data
 ## used in fitting the ClassificationKNN model, specified as a numerical vector.
 ## If you want to use this vector for indexing the training data in @var{X}, you
 ## have to convert it to a logical vector, i.e
 ## @qcode{X = obj.X(logical (obj.RowsUsed), :);}
 ##
-## @item @qcode{obj.Standardize} @tab @tab A boolean flag indicating whether
+## @item @qcode{Standardize} @tab @tab A boolean flag indicating whether
 ## the data in @var{X} have been standardized prior to training.
 ##
-## @item @qcode{obj.Sigma} @tab @tab Predictor standard deviations, specified
+## @item @qcode{Sigma} @tab @tab Predictor standard deviations, specified
 ## as a numeric vector of the same length as the columns in @var{X}.  If the
 ## predictor variables have not been standardized, then @qcode{"obj.Sigma"} is
 ## empty.
 ##
-## @item @qcode{obj.Mu} @tab @tab Predictor means, specified as a numeric
+## @item @qcode{Mu} @tab @tab Predictor means, specified as a numeric
 ## vector of the same length as the columns in @var{X}.  If the predictor
 ## variables have not been standardized, then @qcode{"obj.Mu"} is empty.
 ##
-## @item @qcode{obj.NumPredictors} @tab @tab The number of predictors
+## @item @qcode{NumPredictors} @tab @tab The number of predictors
 ## (variables) in @var{X}.
 ##
-## @item @qcode{obj.PredictorNames} @tab @tab Predictor variable names,
+## @item @qcode{PredictorNames} @tab @tab Predictor variable names,
 ## specified as a cell array of character vectors.  The variable names are in
 ## the same order in which they appear in the training data @var{X}.
 ##
-## @item @qcode{obj.ResponseName} @tab @tab Response variable name, specified
+## @item @qcode{ResponseName} @tab @tab Response variable name, specified
 ## as a character vector.
 ##
-## @item @qcode{obj.ClassNames} @tab @tab Names of the classes in the training
+## @item @qcode{ClassNames} @tab @tab Names of the classes in the training
 ## data @var{Y} with duplicates removed, specified as a cell array of character
 ## vectors.
 ##
-## @item @qcode{obj.BreakTies} @tab @tab Tie-breaking algorithm used by predict
+## @item @qcode{BreakTies} @tab @tab Tie-breaking algorithm used by predict
 ## when multiple classes have the same smallest cost, specified as one of the
 ## following character arrays: @qcode{"smallest"} (default), which favors the
 ## class with the smallest index among the tied groups, i.e. the one that
@@ -105,11 +105,11 @@ classdef ClassificationKNN
 ## with the closest member point according to the distance metric used.
 ## @qcode{"random"}, which randomly picks one class among the tied groups.
 ##
-## @item @qcode{obj.Prior} @tab @tab Prior probabilities for each class,
+## @item @qcode{Prior} @tab @tab Prior probabilities for each class,
 ## specified as a numeric vector.  The order of the elements in @qcode{Prior}
 ## corresponds to the order of the classes in @qcode{ClassNames}.
 ##
-## @item @qcode{obj.Cost} @tab @tab Cost of the misclassification of a point,
+## @item @qcode{Cost} @tab @tab Cost of the misclassification of a point,
 ## specified as a square matrix. @qcode{Cost(i,j)} is the cost of classifying a
 ## point into class @qcode{j} if its true class is @qcode{i} (that is, the rows
 ## correspond to the true class and the columns correspond to the predicted
@@ -120,26 +120,26 @@ classdef ClassificationKNN
 ## @qcode{i = j}.  In other words, the cost is 0 for correct classification and
 ## 1 for incorrect classification.
 ##
-## @item @qcode{obj.ScoreTransform} @tab @tab A function_handle which is used
+## @item @qcode{ScoreTransform} @tab @tab A function_handle which is used
 ## for transforming the kNN prediction score into a posterior probability.  By
 ## default, it is @qcode{'none'}, in which case the @code{predict} and
 ## @code{resubPredict} methods return the prediction scores.
 ##
-## @item @qcode{obj.NumNeighbors} @tab @tab Number of nearest neighbors in
+## @item @qcode{NumNeighbors} @tab @tab Number of nearest neighbors in
 ## @var{X} used to classify each point during prediction, specified as a
 ## positive integer value.
 ##
-## @item @qcode{obj.Distance} @tab @tab Distance metric, specified as a
+## @item @qcode{Distance} @tab @tab Distance metric, specified as a
 ## character vector.  The allowable distance metric names depend on the choice
 ## of the neighbor-searcher method.  See the available distance metrics in
 ## @code{knnseaarch} for more info.
 ##
-## @item @qcode{obj.DistanceWeight} @tab @tab Distance weighting function,
+## @item @qcode{DistanceWeight} @tab @tab Distance weighting function,
 ## specified as a function handle, which accepts a matrix of nonnegative
 ## distances, and returns a matrix the same size containing nonnegative distance
 ## weights.
 ##
-## @item @qcode{obj.DistParameter} @tab @tab Parameter for the distance
+## @item @qcode{DistParameter} @tab @tab Parameter for the distance
 ## metric, specified either as a positive definite covariance matrix (when the
 ## distance metric is @qcode{"mahalanobis"}, or a positive scalar as the
 ## Minkowski distance exponent (when the distance metric is @qcode{"minkowski"},
@@ -147,19 +147,19 @@ classdef ClassificationKNN
 ## columns of @var{X} (when the distance metric is @qcode{"seuclidean"}.  For
 ## any other distance metric, the value of @qcode{DistParameter} is empty.
 ##
-## @item @qcode{obj.NSMethod} @tab @tab Nearest neighbor search method,
+## @item @qcode{NSMethod} @tab @tab Nearest neighbor search method,
 ## specified as either @qcode{"kdtree"}, which creates and uses a Kd-tree to
 ## find nearest neighbors, or @qcode{"exhaustive"}, which uses the exhaustive
 ## search algorithm by computing the distance values from all points in @var{X}
 ## to find nearest neighbors.
 ##
-## @item @qcode{obj.IncludeTies} @tab @tab A boolean flag indicating whether
+## @item @qcode{IncludeTies} @tab @tab A boolean flag indicating whether
 ## prediction includes all the neighbors whose distance values are equal to the
 ## @math{k^th} smallest distance.  If @qcode{IncludeTies} is @qcode{true},
 ## prediction includes all of these neighbors.  Otherwise, prediction uses
 ## exactly @math{k} neighbors.
 ##
-## @item @qcode{obj.BucketSize} @tab @tab Maximum number of data points in the
+## @item @qcode{BucketSize} @tab @tab Maximum number of data points in the
 ## leaf node of the Kd-tree, specified as positive integer value. This argument
 ## is meaningful only when @qcode{NSMethod} is @qcode{"kdtree"}.
 ##
@@ -175,10 +175,6 @@ classdef ClassificationKNN
 
     NumObservations = [];     # Number of observations in training dataset
     RowsUsed        = [];     # Rows used in fitting
-    Standardize     = [];     # Flag to standardize predictors
-    Sigma           = [];     # Predictor standard deviations
-    Mu              = [];     # Predictor means
-
     NumPredictors   = [];     # Number of predictors
     PredictorNames  = [];     # Predictor variables names
     ResponseName    = [];     # Response variable name
@@ -187,6 +183,10 @@ classdef ClassificationKNN
     Cost            = [];     # Cost of misclassification
 
     ScoreTransform  = [];     # Transformation for classification scores
+
+    Standardize     = [];     # Flag to standardize predictors
+    Sigma           = [];     # Predictor standard deviations
+    Mu              = [];     # Predictor means
 
     BreakTies       = [];     # Tie-breaking algorithm
     NumNeighbors    = [];     # Number of nearest neighbors
@@ -316,49 +316,8 @@ classdef ClassificationKNN
             endif
 
           case "scoretransform"
-            ScoreTransform = varargin{2};
-            stList = {"doublelogit", "invlogit", "ismax", "logit", "none", ...
-                      "identity", "sign", "symmetric", "symmetricismax", ...
-                      "symmetriclogit"};
-            if (! (ischar (ScoreTransform) ||
-                   strcmp (class (ScoreTransform), "function_handle")))
-              error (strcat (["ClassificationKNN: 'ScoreTransform' must"], ...
-                             [" be a character vector or a function handle."]));
-            endif
-            if (! ismember (ScoreTransform, stList))
-              error (strcat (["ClassificationKNN: unrecognized"], ...
-                             [" 'ScoreTransform' function."]));
-            endif
-            ## Handle ScoreTransform here
-            if (is_function_handle (ScoreTransform))
-              m = eye (5);
-              if (! isequal (size (m), size (ScoreTransform (m))))
-                error (strcat (["ClassificationKNN: function handle for"], ...
-                               [" 'ScoreTransform' must return the same"], ...
-                               [" size as its input."]));
-              endif
-              this.ScoreTransform = ScoreTransform;
-            else
-              if (strcmpi ("doublelogit", ScoreTransform))
-                this.ScoreTransform = @(x) 1 ./ (1 + exp .^ (-2 * x));
-              elseif (strcmpi ("invlogit", ScoreTransform))
-                this.ScoreTransform = @(x) log (x ./ (1 - x));
-              elseif (strcmpi ("ismax", ScoreTransform))
-                this.ScoreTransform = eval (sprintf ("@(x) ismax (x)"));
-              elseif (strcmpi ("logit", ScoreTransform))
-                this.ScoreTransform = @(x) 1 ./ (1 + exp .^ (-x));
-              elseif (strcmpi ("identity", ScoreTransform))
-                this.ScoreTransform = 'none';
-              elseif (strcmpi ("sign", ScoreTransform))
-                this.ScoreTransform = @(x) sign (x);
-              elseif (strcmpi ("symmetric", ScoreTransform))
-                this.ScoreTransform = @(x) 2 * x - 1;
-              elseif (strcmpi ("symmetricismax", ScoreTransform))
-                this.ScoreTransform = eval (sprintf ("@(x) symmetricismax (x)"));
-              elseif (strcmpi ("symmetriclogit", ScoreTransform))
-                this.ScoreTransform = @(x) 2 ./ (1 + exp .^ (-x)) - 1;
-              endif
-            endif
+            name = "ClassificationKNN";
+            this.ScoreTransform = parseScoreTransform (varargin{2}, name);
 
           case "breakties"
             BreakTies = varargin{2};
@@ -739,9 +698,10 @@ classdef ClassificationKNN
       ## Check for valid XC
       if (isempty (XC))
         error ("ClassificationKNN.predict: XC is empty.");
-      elseif (columns (this.X) != columns (XC))
-        error (strcat (["ClassificationKNN.predict: XC must have the same"], ...
-                       [" number of features (columns) as in the kNN model."]));
+      elseif (this.NumPredictors != columns (XC))
+        error (strcat (["ClassificationKNN.predict:"], ...
+                       [" XC must have the same number of"], ...
+                       [" predictors as the trained model."]));
       endif
 
       ## Get training data and labels
@@ -920,6 +880,14 @@ classdef ClassificationKNN
                 " pairs."]);
       elseif (nargin > 7)
         error ("ClassificationKNN.loss: too many input arguments.");
+      endif
+
+      ## Check for valid X
+      if (isempty (X))
+        error ("ClassificationKNN.loss: X is empty.");
+      elseif (columns (this.X) != columns (X))
+        error (strcat (["ClassificationKNN.loss: X must have the same"], ...
+                       [" number of predictors as the trained model."]));
       endif
 
       ## Default values
@@ -1145,6 +1113,14 @@ classdef ClassificationKNN
       ## Check for sufficient input arguments
       if (nargin < 3)
         error ("ClassificationKNN.margin: too few input arguments.");
+      endif
+
+      ## Check for valid X
+      if (isempty (X))
+        error ("ClassificationKNN.margin: X is empty.");
+      elseif (columns (this.X) != columns (X))
+        error (strcat (["ClassificationKNN.margin: X must have the same"], ...
+                       [" number of predictors as the trained model."]));
       endif
 
       ## Validate Y
@@ -1505,10 +1481,10 @@ classdef ClassificationKNN
     endfunction
 
     ## -*- texinfo -*-
-    ## @deftypefn  {ClassificationSVM} {@var{CVMdl} =} crossval (@var{obj})
-    ## @deftypefnx {ClassificationSVM} {@var{CVMdl} =} crossval (@dots{}, @var{Name}, @var{Value})
+    ## @deftypefn  {ClassificationKNN} {@var{CVMdl} =} crossval (@var{obj})
+    ## @deftypefnx {ClassificationKNN} {@var{CVMdl} =} crossval (@dots{}, @var{Name}, @var{Value})
     ##
-    ## Cross Validate a Support Vector Machine classification object.
+    ## Cross Validate a ClassificationKNN object.
     ##
     ## @code{@var{CVMdl} = crossval (@var{obj})} returns a cross-validated model
     ## object, @var{CVMdl}, from a trained model, @var{obj}, using 10-fold
@@ -1557,7 +1533,7 @@ classdef ClassificationKNN
                        [" the optional Name-Value paired arguments."]));
       endif
 
-      numSamples  = size (this.X, 1);
+      ## Add default values
       numFolds    = 10;
       Holdout     = [];
       Leaveout    = 'off';
@@ -1593,7 +1569,7 @@ classdef ClassificationKNN
 
           case 'cvpartition'
             CVPartition = varargin{2};
-            if (!(isa (CVPartition, 'cvpartition')))
+            if (! (isa (CVPartition, 'cvpartition')))
               error (strcat (["ClassificationKNN.crossval: 'CVPartition'"],...
                              [" must be a 'cvpartition' object."]));
             endif
@@ -1609,16 +1585,84 @@ classdef ClassificationKNN
       if (! isempty (CVPartition))
         partition = CVPartition;
       elseif (! isempty (Holdout))
-        partition = cvpartition (numSamples, 'Holdout', Holdout);
+        partition = cvpartition (this.Y, 'Holdout', Holdout);
       elseif (strcmpi (Leaveout, 'on'))
-        partition = cvpartition (numSamples, 'LeaveOut');
+        partition = cvpartition (this.Y, 'LeaveOut');
       else
-        partition = cvpartition (numSamples, 'KFold', numFolds);
+        partition = cvpartition (this.Y, 'KFold', numFolds);
       endif
 
       ## Create a cross-validated model object
       CVMdl = ClassificationPartitionedModel (this, partition);
 
+    endfunction
+
+    ## -*- texinfo -*-
+    ## @deftypefn  {ClassificationKNN} {} savemodel (@var{obj}, @var{filename})
+    ##
+    ## Save a ClassificationKNN object.
+    ##
+    ## @code{savemodel (@var{obj}, @var{filename})} saves a ClassificationKNN
+    ## object into a file defined by @var{filename}.
+    ##
+    ## @seealso{loadmodel, fitcknn, ClassificationKNN}
+    ## @end deftypefn
+
+    function savemodel (this, fname)
+      ## Generate variable for class name
+      classdef_name = "ClassificationKNN";
+
+      ## Create variables from model properties
+      X = this.X;
+      Y = this.Y;
+      NumObservations = this.NumObservations;
+      RowsUsed        = this.RowsUsed;
+      Standardize     = this.Standardize;
+      Sigma           = this.Sigma;
+      Mu              = this.Mu;
+      NumPredictors   = this.NumPredictors;
+      PredictorNames  = this.PredictorNames;
+      ResponseName    = this.ResponseName;
+      ClassNames      = this.ClassNames;
+      Prior           = this.Prior;
+      Cost            = this.Cost;
+      ScoreTransform  = this.ScoreTransform;
+      BreakTies       = this.BreakTies;
+      NumNeighbors    = this.NumNeighbors;
+      Distance        = this.Distance;
+      DistanceWeight  = this.DistanceWeight;
+      DistParameter   = this.DistParameter;
+      NSMethod        = this.NSMethod;
+      IncludeTies     = this.IncludeTies;
+      BucketSize      = this.BucketSize;
+
+      ## Save classdef name and all model properties as individual variables
+      save (fname, "classdef_name", "X", "Y", "NumObservations", "RowsUsed", ...
+            "Standardize", "Sigma", "Mu", "NumPredictors", "PredictorNames", ...
+            "ResponseName", "ClassNames", "Prior", "Cost", "ScoreTransform", ...
+            "BreakTies", "NumNeighbors", "Distance", "DistanceWeight", ...
+            "DistParameter", "NSMethod", "IncludeTies", "BucketSize");
+    endfunction
+
+  endmethods
+
+  methods (Static, Hidden)
+
+    function mdl = load_model (filename, data)
+      ## Create a ClassificationKNN object
+      mdl = ClassificationKNN (1, 1);
+
+      ## Check that fieldnames in DATA match properties in ClassificationKNN
+      names = fieldnames (data);
+      props = fieldnames (mdl);
+      if (! isequal (sort (names), sort (props)))
+        error ("ClassificationKNN.load_model: invalid model in '%s'.", filename)
+      endif
+
+      ## Copy data into object
+      for i = 1:numel (props)
+        mdl.(props{i}) = data.(props{i});
+      endfor
     endfunction
 
   endmethods
@@ -2208,7 +2252,7 @@ endfunction
 %! predict (ClassificationKNN (ones (4,2), ones (4,1)))
 %!error<ClassificationKNN.predict: XC is empty.> ...
 %! predict (ClassificationKNN (ones (4,2), ones (4,1)), [])
-%!error<ClassificationKNN.predict: XC must have the same number of features> ...
+%!error<ClassificationKNN.predict: XC must have the same number of predictors as the trained model.> ...
 %! predict (ClassificationKNN (ones (4,2), ones (4,1)), 1)
 
 ## Test output for loss method
@@ -2307,6 +2351,10 @@ endfunction
 %! loss (ClassificationKNN (ones (4,2), ones (4,1)))
 %!error<ClassificationKNN.loss: too few input arguments.> ...
 %! loss (ClassificationKNN (ones (4,2), ones (4,1)), ones (4,2))
+%!error<ClassificationKNN.loss: X is empty.> ...
+%! loss (ClassificationKNN (ones (40,2), randi ([1, 2], 40, 1)), [], zeros (2))
+%!error<ClassificationKNN.loss: X must have the same number of predictors as the trained model.> ...
+%! loss (ClassificationKNN (ones (40,2), randi ([1, 2], 40, 1)), 1, zeros (2))
 %!error<ClassificationKNN.loss: name-value arguments must be in pairs.> ...
 %! loss (ClassificationKNN (ones (4,2), ones (4,1)), ones (4,2), ...
 %!        ones (4,1), 'LossFun')
@@ -2359,6 +2407,10 @@ endfunction
 %! margin (ClassificationKNN (ones (4,2), ones (4,1)))
 %!error<ClassificationKNN.margin: too few input arguments.> ...
 %! margin (ClassificationKNN (ones (4,2), ones (4,1)), ones (4,2))
+%!error<ClassificationKNN.margin: X is empty.> ...
+%! margin (ClassificationKNN (ones (40,2), randi ([1, 2], 40, 1)), [], zeros (2))
+%!error<ClassificationKNN.margin: X must have the same number of predictors as the trained model.> ...
+%! margin (ClassificationKNN (ones (40,2), randi ([1, 2], 40, 1)), 1, zeros (2))
 %!error<ClassificationKNN.margin: Y must have the same number of rows as X.> ...
 %! margin (ClassificationKNN (ones (4,2), ones (4,1)), ones (4,2), ones (3,1))
 
@@ -2573,7 +2625,7 @@ endfunction
 %! assert (CVMdl.ModelParameters.Standardize == obj.Standardize)
 %!test
 %! obj = fitcknn (x, y, "NumNeighbors", 10, "Distance", "cityblock");
-%! partition = cvpartition (size (x, 1), 'KFold', 3);
+%! partition = cvpartition (y, 'KFold', 3);
 %! CVMdl = crossval (obj, 'cvPartition', partition);
 %! assert (class (CVMdl), "ClassificationPartitionedModel")
 %! assert (CVMdl.KFold == 3)

@@ -202,7 +202,7 @@ classdef BetaDistribution
     ## -*- texinfo -*-
     ## @deftypefn  {BetaDistribution} {@var{p} =} icdf (@var{pd}, @var{p})
     ##
-    ## Compute the cumulative distribution function (CDF).
+    ## Compute the inverse cumulative distribution function (iCDF).
     ##
     ## @code{@var{p} = icdf (@var{pd}, @var{x})} computes the quantile (the
     ## inverse of the CDF) of the probability distribution object, @var{pd},
@@ -645,6 +645,63 @@ function checkparams (a, b)
   endif
 endfunction
 
+%!demo
+%! ## Generate a data set of 5000 random samples from a Beta distribution with
+%! ## parameters a = 2 and b = 4.  Fit a Beta distribution to this data and plot
+%! ## a PDF of the fitted distribution superimposed on a histogram of the data
+%!
+%! pd = makedist ("Beta", "a", 2, "b", 4)
+%! randg ("seed", 21);
+%! data = random (pd, 5000, 1);
+%! pd = fitdist (data, "Beta")
+%! plot (pd)
+%! title (sprintf ("Fitted Beta distribution with a = %0.2f and b = %0.2f", ...
+%!                 pd.a, pd.b))
+
+%!demo
+%! ## Plot the PDF of a Beta distribution, with parameters a = 2 and b = 4,
+%! ## truncated at [0.1, 0.8] intervals.  Generate 10000 random samples from
+%! ## this truncated distribution and superimpose a histogram with 100 bins
+%! ## scaled accordingly
+%!
+%! pd = makedist ("Beta", "a", 2, "b", 4)
+%! t = truncate (pd, 0.1, 0.8)
+%! randg ("seed", 21);
+%! data = random (t, 10000, 1);
+%! plot (t)
+%! title ("Beta distribution (a = 2, b = 4) truncated at [0.1, 0.8]")
+%! hold on
+%! hist (data, 100, 140)
+%! hold off
+
+%!demo
+%! ## Generate a data set of 100 random samples from a Beta distribution with
+%! ## parameters a = 2 and b = 4.  Fit a Beta distribution to this data and plot
+%! ## its CDF superimposed over an empirical CDF of the data
+%!
+%! pd = makedist ("Beta", "a", 2, "b", 4)
+%! randg ("seed", 21);
+%! data = random (pd, 100, 1);
+%! pd = fitdist (data, "Beta")
+%! plot (pd, "plottype", "cdf")
+%! title (sprintf ("Fitted Beta distribution with a = %0.2f and b = %0.2f", ...
+%!                 pd.a, pd.b))
+%! legend ({"empirical CDF", "fitted CDF"}, "location", "east")
+
+%!demo
+%! ## Generate a data set of 200 random samples from a Beta distribution with
+%! ## parameters a = 2 and b = 4.  Display a probability plot for the Beta
+%! ## distribution fit to the data.
+%!
+%! pd = makedist ("Beta", "a", 2, "b", 4)
+%! randg ("seed", 21);
+%! data = random (pd, 200, 1);
+%! pd = fitdist (data, "Beta")
+%! plot (pd, "plottype", "probability")
+%! title (sprintf ("Probability plot of a fitted Beta distribution with a = %0.2f and b = %0.2f", ...
+%!                 pd.a, pd.b))
+%! legend ({"empirical CDF", "fitted CDF"}, "location", "southeast")
+
 ## Test output
 %!shared pd, t
 %! pd = BetaDistribution;
@@ -764,6 +821,10 @@ endfunction
 %! plot (BetaDistribution, "Parent", 12)
 %!error <plot: invalid VALUE for 'Parent' argument.> ...
 %! plot (BetaDistribution, "Parent", "hax")
+%!error <plot: invalid NAME for optional argument.> ...
+%! plot (BetaDistribution, "invalidNAME", "pdf")
+%!error <plot: no fitted DATA to plot a probability plot.> ...
+%! plot (BetaDistribution, "PlotType", "probability")
 
 ## 'proflik' method
 %!error <proflik: no fitted data available.> ...

@@ -116,7 +116,7 @@ function [H, pValue, ksstat, cV] = kstest (x, varargin)
           alpha = prop{2};
         case "tail"
           tail = prop{2};
-        case "CDF"
+        case "cdf"
           CDF = prop{2};
         otherwise
           error ("kstest: unknown option %s", prop{1});
@@ -138,8 +138,8 @@ function [H, pValue, ksstat, cV] = kstest (x, varargin)
   endif
   ## Remove NaNs, get sample size and compute empirical cdf
   x(isnan (x)) = [];
-  n = length(x);
   [sampleCDF, x] = ecdf (x);
+  n = length(x);
   ## Remove 1st element
   x = x(2:end);
   ## Check the hypothesized CDF specified under the null hypothesis.
@@ -166,7 +166,7 @@ function [H, pValue, ksstat, cV] = kstest (x, varargin)
     endif
     ## Remove duplicates. Check for consistency
     rd = find (diff (xCDF) == 0);
-    if (! isempty (rm))
+    if (! isempty (rd))
       if (! all (ydiff(rd) == 0))
         error ("kstest: wrong duplicates in numericl CDF.");
       endif
@@ -324,6 +324,9 @@ endfunction
 %! [h, p] = kstest (grades(:,1));
 %! assert (h, true);
 %! assert (p, 7.58603305206105e-107, 1e-14);
+%! [h, p] = kstest (grades(:,1), "CDF", @(x) normcdf(x, 75, 10));
+%! assert (h, false);
+%! assert (p, 0.5612, 1e-4);
 %!test
 %! load stockreturns
 %! x = stocks(:,3);
@@ -332,4 +335,3 @@ endfunction
 %! assert (p, 5.085438806199252e-05, 1e-14);
 %! assert (k, 0.2197, 1e-4);
 %! assert (c, 0.1207, 1e-4);
-
